@@ -6,4 +6,5 @@ lightgbm
 catboost
 matplotlib
 joblib
+seaborn
 

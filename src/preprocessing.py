@@ -38,6 +38,16 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # 3) Drop columns not used for modeling.
     df.drop(columns=config.COLUMNS_TO_DROP, inplace=True, errors="ignore")
 
+    # 3.1) Drop leakage/technical columns by pattern.
+    cols_to_drop = [
+        col
+        for col in df.columns
+        if any(pattern in col for pattern in config.EXCLUDE_PATTERNS)
+    ]
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop, errors="ignore")
+        print(f"Removed {len(cols_to_drop)} columns: {cols_to_drop[:5]}...")
+
     # 4) Remove rows without target.
     df = df[df["y"].notna()]
 

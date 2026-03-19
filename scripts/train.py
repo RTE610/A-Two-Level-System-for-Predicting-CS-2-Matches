@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -37,7 +38,63 @@ def parse_args():
         default=str(config.MODELS_DIR),
         help="Directory where models/scaler will be saved.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["ultra", "fast", "full"],
+        default="fast",
+        help="Training mode: fast (recommended) or full sweep.",
+    )
+    parser.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Enable GPU for supported models (XGBoost/LightGBM/CatBoost).",
+    )
+    parser.add_argument(
+        "--pca-max",
+        type=int,
+        default=None,
+        help="Optional PCA upper bound. Overrides mode defaults.",
+    )
+    parser.add_argument(
+        "--pca-step",
+        type=int,
+        default=None,
+        help="Optional PCA step. Overrides mode defaults.",
+    )
+    parser.add_argument(
+        "--model-set",
+        choices=["ultra", "fast", "full"],
+        default=None,
+        help="Optional model subset. Defaults to mode value.",
+    )
     return parser.parse_args()
+
+
+def _select_classifiers(classifiers: dict[str, object], model_set: str) -> dict[str, object]:
+    """
+    Choose model subset for faster experimentation.
+    """
+    if model_set == "full":
+        return classifiers
+
+    if model_set == "ultra":
+        # Ultra-fast subset: minimal but representative models.
+        keep = [
+            "Logistic Regression",
+            "Random Forest",
+            "LightGBM",
+        ]
+        return {k: v for k, v in classifiers.items() if k in keep}
+
+    # Fast subset: good speed/quality trade-off.
+    keep = [
+        "Logistic Regression",
+        "Random Forest",
+        "XGBoost",
+        "LightGBM",
+        "CatBoost",
+    ]
+    return {k: v for k, v in classifiers.items() if k in keep}
 
 
 def main():
@@ -82,6 +139,29 @@ def main():
     features = distance_df.drop(columns=["y"])
     target = distance_df["y"]
 
+    # Sanitize feature matrix for sklearn/PCA:
+    # - force numeric
+    # - replace inf with NaN
+    # - drop columns that are entirely NaN
+    # - fill remaining NaN with column means
+    features = features.apply(pd.to_numeric, errors="coerce")
+    features = features.replace([np.inf, -np.inf], np.nan)
+
+    all_nan_cols = features.columns[features.isna().all()].tolist()
+    if all_nan_cols:
+        logger.warning("Dropping %d all-NaN feature columns before training.", len(all_nan_cols))
+        features = features.drop(columns=all_nan_cols)
+
+    features = features.fillna(features.mean(numeric_only=True))
+
+    remaining_nan = int(features.isna().sum().sum())
+    if remaining_nan > 0:
+        # Final fallback: remove rows with unresolved NaN.
+        logger.warning("Found %d NaN values after imputation; dropping affected rows.", remaining_nan)
+        valid_mask = features.notna().all(axis=1)
+        features = features.loc[valid_mask].copy()
+        target = target.loc[valid_mask].copy()
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(features)
     X = pd.DataFrame(X_scaled, columns=features.columns, index=features.index)
@@ -94,11 +174,42 @@ def main():
     )
 
     # PCA не може мати `n_components` > min(n_samples, n_features).
-    pca_max = min(int(X_train.shape[1]), int(X_train.shape[0]), config.MAX_PCA_COMPONENTS)
-    pca_range = list(range(1, pca_max + 1))
-    logger.info("Running PCA sweep: n_components=%d..%d", pca_range[0], pca_range[-1])
+    mode = args.mode
+    model_set = args.model_set or mode
+    if mode == "ultra":
+        default_pca_max = 10
+        default_pca_step = 3
+    elif mode == "fast":
+        default_pca_max = 40
+        default_pca_step = 2
+    else:
+        default_pca_max = config.MAX_PCA_COMPONENTS
+        default_pca_step = 1
 
-    classifiers = config.get_classifiers(random_state=config.RANDOM_STATE)
+    pca_max_raw = args.pca_max if args.pca_max is not None else default_pca_max
+    pca_step = args.pca_step if args.pca_step is not None else default_pca_step
+    pca_step = max(1, int(pca_step))
+
+    pca_max = min(int(X_train.shape[1]), int(X_train.shape[0]), int(pca_max_raw), config.MAX_PCA_COMPONENTS)
+    pca_range = list(range(1, pca_max + 1, pca_step))
+    if pca_range[-1] != pca_max:
+        pca_range.append(pca_max)
+    logger.info("Mode=%s, model_set=%s, use_gpu=%s", mode, model_set, args.use_gpu)
+    logger.info(
+        "Running PCA sweep: n_components=%d..%d (step=%d, points=%d)",
+        pca_range[0],
+        pca_range[-1],
+        pca_step,
+        len(pca_range),
+    )
+
+    classifiers_all = config.get_classifiers(
+        random_state=config.RANDOM_STATE,
+        fast=(mode in {"ultra", "fast"}),
+        use_gpu=args.use_gpu,
+    )
+    classifiers = _select_classifiers(classifiers_all, model_set=model_set)
+    logger.info("Using %d classifiers.", len(classifiers))
 
     _ = run_pca_sweep(
         X_train=X_train,

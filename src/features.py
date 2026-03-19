@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import inspect
 from typing import Any, Callable
 
@@ -103,16 +102,64 @@ def _wrap_distance_func(
     except Exception:
         n_params = 2
 
+    def _safe_call_2(x: float, y: float) -> float:
+        try:
+            return float(distance_func(x, y))
+        except Exception:
+            return float(np.nan)
+
     if n_params <= 2:
-        return lambda x, y: float(distance_func(x, y))
+        return _safe_call_2
 
     if n_params >= 3:
         if distance_var is None:
             raise ValueError("distance_func requires `distance_var` (3+ params).")
-        return lambda x, y: float(distance_func(x, y, distance_var))
+
+        def _safe_call_3(x: float, y: float) -> float:
+            try:
+                return float(distance_func(x, y, distance_var))
+            except Exception:
+                return float(np.nan)
+
+        return _safe_call_3
 
     # Fallback
-    return lambda x, y: float(distance_func(x, y))
+    return _safe_call_2
+
+
+def _to_float_scalar(value: Any) -> float:
+    """
+    Convert common JSON-like scalar wrappers to float.
+    Returns NaN for unsupported values.
+    """
+    if value is None:
+        return float(np.nan)
+
+    if isinstance(value, dict):
+        if "$numberDouble" in value:
+            raw = value.get("$numberDouble")
+            if raw in {"Infinity", "+Infinity", "-Infinity"}:
+                return float(np.nan)
+            try:
+                return float(raw)
+            except Exception:
+                return float(np.nan)
+        if "$numberInt" in value:
+            try:
+                return float(int(value.get("$numberInt")))
+            except Exception:
+                return float(np.nan)
+        if "$numberLong" in value:
+            try:
+                return float(int(value.get("$numberLong")))
+            except Exception:
+                return float(np.nan)
+        return float(np.nan)
+
+    try:
+        return float(value)
+    except Exception:
+        return float(np.nan)
 
 
 def compute_team_distances_augmented(
@@ -151,8 +198,8 @@ def compute_team_distances_augmented(
 
         dist_col_name = col1.replace("team1", "teams_distance")
 
-        a = df[col1].to_numpy()
-        b = df[col2].to_numpy()
+        a = df[col1].map(_to_float_scalar).to_numpy()
+        b = df[col2].map(_to_float_scalar).to_numpy()
         orig_distance_data[dist_col_name] = [distance(x, y) for x, y in zip(a, b)]
 
     orig_team1_df = pd.DataFrame(orig_team1_data, index=df.index)
@@ -176,8 +223,8 @@ def compute_team_distances_augmented(
 
         dist_col_name = col1.replace("team1", "teams_distance")
 
-        a = df[col2].to_numpy()
-        b = df[col1].to_numpy()
+        a = df[col2].map(_to_float_scalar).to_numpy()
+        b = df[col1].map(_to_float_scalar).to_numpy()
         swapped_distance_data[dist_col_name] = [distance(x, y) for x, y in zip(a, b)]
 
     swapped_team1_df = pd.DataFrame(swapped_team1_data, index=df.index)

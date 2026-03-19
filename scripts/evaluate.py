@@ -12,6 +12,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
+
 import config
 from src.evaluation import compare_models, evaluate_model, run_cross_validation
 from src.training import read_best_pca_settings
@@ -24,10 +27,6 @@ from src.visualization import (
     plot_pca_accuracy_curves,
     plot_roc_curves,
 )
-
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT_DIR))
 
 
 def parse_args():
@@ -92,7 +91,27 @@ def main():
         raise FileNotFoundError(f"Missing scaler at {scaler_path}")
 
     scaler: StandardScaler = joblib.load(scaler_path)
-    X_scaled = scaler.transform(X_raw)
+    # Reproduce train.py feature sanitization before scaler.transform:
+    # - numeric coercion
+    # - inf/-inf -> NaN
+    # - drop all-NaN columns
+    # - fill NaN with column means
+    X_eval = X_raw.apply(pd.to_numeric, errors="coerce")
+    X_eval = X_eval.replace([np.inf, -np.inf], np.nan)
+    all_nan_cols = X_eval.columns[X_eval.isna().all()].tolist()
+    if all_nan_cols:
+        X_eval = X_eval.drop(columns=all_nan_cols)
+    X_eval = X_eval.fillna(X_eval.mean(numeric_only=True))
+
+    # Align columns exactly with scaler training schema.
+    if hasattr(scaler, "feature_names_in_"):
+        train_cols = list(scaler.feature_names_in_)
+        # Remove unseen columns and add missing ones.
+        X_eval = X_eval.reindex(columns=train_cols)
+        # If some columns are still NaN after reindexing, fill with 0.0 fallback.
+        X_eval = X_eval.fillna(0.0)
+
+    X_scaled = scaler.transform(X_eval)
 
     # Recreate the same holdout split as in train.py (no stratify).
     X_train_scaled, X_test_scaled, y_train, y_test = train_test_split(
@@ -213,7 +232,7 @@ def main():
         classifiers_for_cv = {n: classifiers[n] for n in top_models if n in classifiers}
 
         # For CV we use raw features (unscaled) and rebuild scaling/PCA per fold.
-        X_for_cv = X_raw
+        X_for_cv = X_eval
         y_for_cv = y
 
         cv_results = run_cross_validation(
