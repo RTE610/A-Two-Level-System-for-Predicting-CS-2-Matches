@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -39,13 +41,13 @@ def plot_pca_accuracy_curves(pca_sweep_results: pd.DataFrame, save_path: str | P
         g = g.sort_values("n_components")
         plt.plot(g["n_components"], g["accuracy"], label=clf_name)
 
-    plt.title("Accuracy vs PCA components")
-    plt.xlabel("PCA components")
-    plt.ylabel("Accuracy")
+    plt.title("Залежність accuracy від кількості PCA компонентів")
+    plt.xlabel("Кількість компонентів PCA")
+    plt.ylabel("Точність (Accuracy)")
     plt.legend(fontsize=8)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -59,7 +61,7 @@ def plot_confusion_matrix(
 
     plt.figure(figsize=(6, 5))
     plt.imshow(cm, interpolation="nearest", cmap="Blues")
-    plt.title("Confusion matrix")
+    plt.title("Матриця плутанини")
     plt.colorbar()
     tick_marks = np.arange(len(class_names))
     plt.xticks(tick_marks, class_names, rotation=45)
@@ -77,10 +79,10 @@ def plot_confusion_matrix(
                 color="white" if cm[i, j] > thresh else "black",
             )
 
-    plt.ylabel("True label")
-    plt.xlabel("Predicted label")
+    plt.ylabel("Правильний клас")
+    plt.xlabel("Передбачений клас")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -96,13 +98,13 @@ def plot_roc_curves(models_results: list[dict[str, Any]], save_path: str | Path)
         plt.plot(item["fpr"], item["tpr"], label=f'{item["name"]} (AUC={item["auc"]:.3f})')
 
     plt.plot([0, 1], [0, 1], "k--", alpha=0.6)
-    plt.title("ROC curves")
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
+    plt.title("ROC-криві")
+    plt.xlabel("Частота хибнопозитивних (FPR)")
+    plt.ylabel("Частота істиннопозитивних (TPR)")
     plt.legend(fontsize=8)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -140,10 +142,10 @@ def plot_feature_importance(
 
     plt.figure(figsize=(12, 6))
     plt.barh(top_features[::-1], top_values[::-1])
-    plt.title("Top feature importances")
-    plt.xlabel("Importance")
+    plt.title("Найважливіші ознаки")
+    plt.xlabel("Важливість")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -172,10 +174,10 @@ def plot_feature_importance_values(
 
     plt.figure(figsize=(12, 6))
     plt.barh(top_features[::-1], top_values[::-1])
-    plt.title("Top feature importances")
-    plt.xlabel("Importance")
+    plt.title("Найважливіші ознаки")
+    plt.xlabel("Важливість")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -185,13 +187,13 @@ def plot_class_distribution(y: np.ndarray | pd.Series, save_path: str | Path) ->
 
     y_arr = np.asarray(y).astype(int)
     counts = np.bincount(y_arr, minlength=2)
-    labels = ["Class 0", "Class 1"]
+    labels = ["Клас 0", "Клас 1"]
 
     plt.figure(figsize=(6, 4))
     plt.bar(labels, counts, color=["#4C78A8", "#F58518"])
-    plt.title("Class distribution")
+    plt.title("Розподіл класів")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -213,9 +215,9 @@ def plot_correlation_heatmap(
     plt.colorbar()
     plt.xticks(range(len(cols)), cols, rotation=90, fontsize=7)
     plt.yticks(range(len(cols)), cols, fontsize=7)
-    plt.title("Correlation heatmap (top features)")
+    plt.title("Кореляційна матриця (top фіч)")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -246,9 +248,167 @@ def plot_cv_results(cv_results: dict[str, dict[str, Any]], save_path: str | Path
     plt.figure(figsize=(12, 6))
     plt.bar(labels, means, yerr=stds, capsize=3)
     plt.xticks(rotation=45, ha="right")
-    plt.ylabel("Accuracy")
-    plt.title("Cross-validation accuracy")
+    plt.ylabel("Точність (Accuracy)")
+    plt.title("Результати cross-validation (accuracy)")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_feature_importance_from_importances(
+    importances: np.ndarray,
+    feature_names: list[str],
+    title: str,
+    save_path: str | Path,
+    top_n: int = 20,
+) -> None:
+    """
+    Prompt-compatible wrapper: feature importances are passed directly as an array.
+    """
+    plot_feature_importance_values(
+        feature_names=feature_names,
+        importances=importances,
+        save_path=save_path,
+        top_n=top_n,
+    )
+
+
+def plot_model_comparison(comparison_df: pd.DataFrame, save_path: str | Path) -> None:
+    """
+    Prompt-compatible stub for grouped comparison plots.
+    """
+    save_path = Path(save_path)
+    _ensure_parent_dir(save_path)
+
+    if comparison_df.empty:
+        return
+
+    metric_cols = [c for c in comparison_df.columns if c not in {"model", "confusion_matrix"}]
+    metric_cols = [c for c in metric_cols if isinstance(c, str)]
+    metric_cols = metric_cols[:4]  # keep plot readable
+
+    plt.figure(figsize=(10, 5))
+    x = np.arange(len(comparison_df["model"]))
+    width = 0.15
+    for i, m in enumerate(metric_cols):
+        plt.bar(x + i * width, comparison_df[m].values, width=width, label=m)
+    plt.xticks(x + width * (len(metric_cols) - 1) / 2, comparison_df["model"], rotation=45, ha="right")
+    plt.title("Порівняння моделей")
+    plt.ylabel("Значення метрики")
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_dataset_comparison(
+    results_60d: pd.DataFrame,
+    results_90d: pd.DataFrame,
+    save_path: str | Path,
+) -> None:
+    """
+    Prompt-compatible stub for comparing per-model metrics across datasets.
+    """
+    save_path = Path(save_path)
+    _ensure_parent_dir(save_path)
+
+    if results_60d.empty or results_90d.empty:
+        return
+
+    merged = results_60d.merge(results_90d, on="model", suffixes=("_60d", "_90d"))
+    if merged.empty:
+        return
+
+    # Prefer F1 if present, otherwise accuracy.
+    y_col = "f1_macro" if "f1_macro_60d" in merged.columns else "accuracy"
+    if y_col == "f1_macro":
+        vals60 = merged["f1_macro_60d"].values
+        vals90 = merged["f1_macro_90d"].values
+        metric_name = "F1 (macro)"
+    else:
+        vals60 = merged["accuracy_60d"].values
+        vals90 = merged["accuracy_90d"].values
+        metric_name = "Accuracy"
+
+    labels = merged["model"].astype(str).values.tolist()
+    x = np.arange(len(labels))
+    width = 0.35
+    plt.figure(figsize=(10, 5))
+    plt.bar(x - width / 2, vals60, width, label="60d", color="#4C78A8")
+    plt.bar(x + width / 2, vals90, width, label="90d", color="#F58518")
+    plt.xticks(x, labels, rotation=45, ha="right")
+    plt.ylabel(metric_name)
+    plt.title("Порівняння 60d vs 90d")
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_filter_model_comparison(results_df: pd.DataFrame, save_path: str | Path) -> None:
+    """
+    Plot Binary-Filter model comparison by F1 macro.
+    """
+    save_path = Path(save_path)
+    _ensure_parent_dir(save_path)
+    if results_df.empty:
+        return
+
+    df = results_df.sort_values("f1_macro", ascending=False)
+    plt.figure(figsize=(8, 5))
+    plt.bar(df["model"], df["f1_macro"], color="#4C78A8")
+    plt.xticks(rotation=25, ha="right")
+    plt.ylabel("F1 (macro)")
+    plt.title("Порівняння моделей Binary-Filter")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_baseline_vs_proposed(comparison_df: pd.DataFrame, save_path: str | Path) -> None:
+    """
+    Grouped bars for baseline vs proposed accuracy by model.
+    """
+    save_path = Path(save_path)
+    _ensure_parent_dir(save_path)
+    if comparison_df.empty:
+        return
+
+    df = comparison_df.copy()
+    labels = df["model"].astype(str).tolist()
+    x = np.arange(len(labels))
+    width = 0.35
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(x - width / 2, df["baseline_accuracy"], width, label="Baseline", color="#4C78A8")
+    plt.bar(x + width / 2, df["proposed_accuracy"], width, label="Proposed", color="#F58518")
+    plt.xticks(x, labels, rotation=30, ha="right")
+    plt.ylabel("Accuracy")
+    plt.title("Baseline vs Proposed (з фільтром)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_coverage_vs_accuracy(df: pd.DataFrame, save_path: str | Path) -> None:
+    """
+    Scatter plot for coverage vs proposed accuracy.
+    """
+    save_path = Path(save_path)
+    _ensure_parent_dir(save_path)
+    if df.empty:
+        return
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(df["coverage"], df["proposed_accuracy"], s=60, alpha=0.8)
+    for _, row in df.iterrows():
+        label = f'{row.get("dataset", "")}:{row.get("model", "")}'
+        plt.annotate(label, (row["coverage"], row["proposed_accuracy"]), fontsize=7)
+    plt.xlabel("Coverage")
+    plt.ylabel("Proposed accuracy")
+    plt.title("Coverage vs Accuracy")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 

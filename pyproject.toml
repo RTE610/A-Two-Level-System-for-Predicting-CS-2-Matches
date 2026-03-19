@@ -1,0 +1,19 @@
+[project]
+name = "cs2-match-predictor"
+version = "0.1.0"
+description = "CS2 match predictor (refactored from a notebook)"
+requires-python = ">=3.10"
+
+dependencies = [
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "xgboost",
+  "lightgbm",
+  "catboost",
+  "matplotlib",
+  "joblib",
+  "seaborn",
+  "streamlit",
+]
+

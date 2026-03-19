@@ -111,8 +111,28 @@ def run_cross_validation(
     if best_pca_settings is None:
         best_pca_settings = {}
 
-    X_arr = np.asarray(X)
-    y_arr = np.asarray(y)
+    # Sanitize features for PCA:
+    # - numeric coercion
+    # - inf/-inf -> NaN
+    # - drop all-NaN columns
+    # - fill NaN with column means
+    if isinstance(X, pd.DataFrame):
+        X_df = X.copy()
+    else:
+        X_df = pd.DataFrame(X)
+
+    X_df = X_df.apply(pd.to_numeric, errors="coerce")
+    X_df = X_df.replace([np.inf, -np.inf], np.nan)
+    all_nan_cols = X_df.columns[X_df.isna().all()].tolist()
+    if all_nan_cols:
+        X_df = X_df.drop(columns=all_nan_cols)
+    X_df = X_df.fillna(X_df.mean(numeric_only=True))
+
+    # Final fallback to avoid PCA errors.
+    valid_mask = X_df.notna().all(axis=1)
+    X_df = X_df.loc[valid_mask].copy()
+    y_arr = np.asarray(y)[valid_mask.to_numpy()]
+    X_arr = X_df.to_numpy()
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
@@ -172,8 +192,26 @@ def run_cross_validation(
 
     summarized: dict[str, dict[str, Any]] = {}
     for clf_name, met in cv_metrics.items():
-        summarized[clf_name] = {}
-        for metric_name, values in met.items():
+        accuracy_values = [v for v in met.get("accuracy", []) if v is not None]
+        f1_values = [v for v in met.get("f1_macro", []) if v is not None]
+
+        accuracy_mean = float(np.mean(accuracy_values)) if accuracy_values else None
+        accuracy_std = float(np.std(accuracy_values)) if accuracy_values else None
+        f1_mean = float(np.mean(f1_values)) if f1_values else None
+        f1_std = float(np.std(f1_values)) if f1_values else None
+
+        # Keep prompt-like keys.
+        summarized[clf_name] = {
+            "accuracy_mean": accuracy_mean,
+            "accuracy_std": accuracy_std,
+            "f1_mean": f1_mean,
+            "f1_std": f1_std,
+            "scores": accuracy_values,
+        }
+
+        # Also expose the macro variants we already use in other places.
+        for metric_name in ["precision_macro", "recall_macro", "roc_auc"]:
+            values = met.get(metric_name, [])
             vals = [v for v in values if v is not None]
             if len(vals) == 0:
                 summarized[clf_name][f"{metric_name}_mean"] = None
@@ -181,6 +219,10 @@ def run_cross_validation(
             else:
                 summarized[clf_name][f"{metric_name}_mean"] = float(np.mean(vals))
                 summarized[clf_name][f"{metric_name}_std"] = float(np.std(vals))
+
+        # Preserve previous keys to avoid breaking any existing code.
+        summarized[clf_name]["f1_macro_mean"] = f1_mean
+        summarized[clf_name]["f1_macro_std"] = f1_std
 
     return summarized
 

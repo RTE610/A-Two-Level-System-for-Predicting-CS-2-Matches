@@ -2,8 +2,12 @@ data/*.json
 data/*.csv
 data/*.txt
 models/*.pkl
+models/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+*.ipynb
 results/
+catboost_info/
+agent-prompt-*.md
 

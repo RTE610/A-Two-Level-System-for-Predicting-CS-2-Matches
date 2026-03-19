@@ -1,0 +1,42 @@
+services:
+  cs2-ui:
+    build: .
+    container_name: cs2-ui
+    command: >
+      streamlit run ui/app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --browser.gatherUsageStats=false
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./results:/app/results
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  cs2-train:
+    build: .
+    container_name: cs2-train
+    command: >
+      python scripts/train.py
+      --json-path /app/data/matches.json
+      --distance-set orig
+      --mode fast
+      --output-dir /app/models
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    profiles: ["jobs"]
+
+  cs2-evaluate:
+    build: .
+    container_name: cs2-evaluate
+    command: >
+      sh -lc "python scripts/evaluate.py --model-dir ${MODEL_DIR} --output-dir /app/results"
+    environment:
+      - MODEL_DIR=/app/models/latest/dist_orig
+    volumes:
+      - ./models:/app/models
+      - ./results:/app/results
+    profiles: ["jobs"]

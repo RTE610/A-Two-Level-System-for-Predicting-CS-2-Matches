@@ -6,4 +6,6 @@ lightgbm
 catboost
 matplotlib
 joblib
+seaborn
+streamlit
 
