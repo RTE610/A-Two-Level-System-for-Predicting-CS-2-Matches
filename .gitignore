@@ -1,0 +1,9 @@
+data/*.json
+data/*.csv
+data/*.txt
+models/*.pkl
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+results/
+
