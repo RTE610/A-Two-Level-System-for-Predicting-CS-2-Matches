@@ -13,5 +13,7 @@ dependencies = [
   "catboost",
   "matplotlib",
   "joblib",
+  "seaborn",
+  "streamlit",
 ]
 

@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir uv && uv pip install --system -r /app/requirement
 
 COPY . /app
 
+EXPOSE 8501
+
 # Default command (can be overridden by `docker run ... python ...`)
 CMD ["python", "scripts/train.py", "--help"]
 
