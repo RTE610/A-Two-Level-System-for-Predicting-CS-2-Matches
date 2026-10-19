@@ -6,3 +6,10 @@ models/**/
 .git/
 *.ipynb
 
+data/*.json
+data/*.csv
+mlruns/
+mlflow.db
+reports/
+tests/
+.github/
