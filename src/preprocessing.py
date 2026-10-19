@@ -6,7 +6,7 @@ import pandas as pd
 import config
 
 
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess(df: pd.DataFrame, impute: bool = True) -> pd.DataFrame:
     """
     Preprocess the raw matches dataframe:
     1) Convert {$numberDouble: 'Infinity'} to NaN for powerRank columns
@@ -14,6 +14,9 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     3) Drop unnecessary columns
     4) Remove rows without target `y`
     5) Fill remaining NaNs with column means
+
+    With `impute=False` steps that compute statistics over the whole dataset (mean filling)
+    are skipped, so imputation can be fitted on the training split only (v2.0 pipeline).
     """
 
     df = df.copy()
@@ -27,8 +30,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df[config.POWER_RANK_COLUMNS] = df[config.POWER_RANK_COLUMNS].map(convert_infinity)
     for col in config.POWER_RANK_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-        mean_val = df[col].mean()
-        df[col] = df[col].fillna(mean_val)
+        if impute:
+            df[col] = df[col].fillna(df[col].mean())
 
     # 2) Convert integer columns to float for consistent sklearn behavior.
     int_columns = df.select_dtypes(include=["int64"]).columns
@@ -49,6 +52,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     # 5) Fill NaN with means (as in the original notebook).
     # TODO: consider median/KNN/drop if this hurts performance.
-    df = df.fillna(df.mean(numeric_only=True))
+    if impute:
+        df = df.fillna(df.mean(numeric_only=True))
 
     return df

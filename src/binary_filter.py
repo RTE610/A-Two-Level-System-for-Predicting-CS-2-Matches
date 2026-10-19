@@ -45,9 +45,12 @@ def _to_numeric_series(df: pd.DataFrame, col: str | None, default: float = np.na
     return pd.to_numeric(df[col], errors="coerce")
 
 
-def create_filter_features(df: pd.DataFrame) -> pd.DataFrame:
+def create_filter_features(df: pd.DataFrame, impute: bool = True) -> pd.DataFrame:
     """
     Build meta-features for the Binary-Filter.
+
+    With `impute=False` missing values are kept as NaN so the caller can impute
+    with statistics fitted on the training split only.
     """
     t1_matches_col = _find_column_by_suffix(df, ["team1|totalMatchesPlayed"])
     t2_matches_col = _find_column_by_suffix(df, ["team2|totalMatchesPlayed"])
@@ -83,6 +86,8 @@ def create_filter_features(df: pd.DataFrame) -> pd.DataFrame:
     features["max_power_rank"] = np.maximum(t1_rank, t2_rank)
 
     features = features.replace([np.inf, -np.inf], np.nan)
+    if not impute:
+        return features
     features = features.fillna(features.mean(numeric_only=True))
     if features.isna().sum().sum() > 0:
         features = features.fillna(0.0)
@@ -241,3 +246,56 @@ def apply_filter(X: np.ndarray | pd.DataFrame, model: Any, scaler: StandardScale
 
     X_scaled = scaler.transform(X_df)
     return model.predict(X_scaled).astype(int)
+
+
+def _filter_models() -> dict[str, Any]:
+    return {
+        "Logistic Regression": LogisticRegression(max_iter=5000, random_state=RANDOM_STATE),
+        "Decision Tree": DecisionTreeClassifier(random_state=RANDOM_STATE),
+        "Random Forest": RandomForestClassifier(random_state=RANDOM_STATE, n_estimators=200, n_jobs=-1),
+        "MLP": MLPClassifier(max_iter=5000, random_state=RANDOM_STATE),
+    }
+
+
+def select_binary_filter(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    X_val: pd.DataFrame,
+    y_val: np.ndarray,
+    dataset_name: str = "",
+) -> dict[str, Any]:
+    """
+    v2.0 selection: fit candidates on train, pick the best by macro-F1 on validation.
+
+    Unlike `train_binary_filter`, no internal random split is made, so the caller controls
+    the (temporal) split and the test set stays untouched until the final report.
+    """
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+
+    rows: list[dict[str, Any]] = []
+    trained: dict[str, Any] = {}
+    for name, model in _filter_models().items():
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_val_scaled)
+        metrics = evaluate_model(y_val, y_pred, y_proba=None)
+        rows.append(
+            {
+                "dataset": dataset_name,
+                "model": name,
+                "val_accuracy": metrics["accuracy"],
+                "val_f1_macro": metrics["f1_macro"],
+            }
+        )
+        trained[name] = model
+
+    results_df = pd.DataFrame(rows).sort_values("val_f1_macro", ascending=False).reset_index(drop=True)
+    best_name = str(results_df.iloc[0]["model"])
+    return {
+        "best_model": trained[best_name],
+        "best_scaler": scaler,
+        "best_model_name": best_name,
+        "results_df": results_df,
+        "all_models": trained,
+    }
