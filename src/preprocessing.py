@@ -39,11 +39,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df.drop(columns=config.COLUMNS_TO_DROP, inplace=True, errors="ignore")
 
     # 3.1) Drop leakage/technical columns by pattern.
-    cols_to_drop = [
-        col
-        for col in df.columns
-        if any(pattern in col for pattern in config.EXCLUDE_PATTERNS)
-    ]
+    cols_to_drop = [col for col in df.columns if any(pattern in col for pattern in config.EXCLUDE_PATTERNS)]
     if cols_to_drop:
         df = df.drop(columns=cols_to_drop, errors="ignore")
         print(f"Removed {len(cols_to_drop)} columns: {cols_to_drop[:5]}...")
@@ -56,4 +52,3 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.fillna(df.mean(numeric_only=True))
 
     return df
-

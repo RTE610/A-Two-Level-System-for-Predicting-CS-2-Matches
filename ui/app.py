@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional, Any
 import sys
+from pathlib import Path
+from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
-import joblib
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from src.binary_filter import apply_filter, create_filter_features, create_filter_target, train_binary_filter
 from src.data_loader import load_matches
 from src.features import compute_team_distances_augmented, difference_distance
-from src.binary_filter import create_filter_features, create_filter_target, train_binary_filter, apply_filter
-
 
 RESULTS_DIR = ROOT_DIR / "results"
 TABLES_DIR = RESULTS_DIR / "tables"
@@ -35,7 +34,7 @@ DEMO_TEAM_NAMES = [
 ]
 
 
-def _read_csv(path: Path) -> Optional[pd.DataFrame]:
+def _read_csv(path: Path) -> pd.DataFrame | None:
     if not path.exists():
         return None
     try:
@@ -103,11 +102,11 @@ def _extract_team_name_map_from_raw(df_raw: pd.DataFrame) -> dict[int, str]:
 
     # Candidate name-like fields.
     cand_t1_cols = [
-        c
-        for c in df_raw.columns
-        if "team1|" in c and any(x in c.lower() for x in ["name", "slug", "acronym"])
+        c for c in df_raw.columns if "team1|" in c and any(x in c.lower() for x in ["name", "slug", "acronym"])
     ]
-    cand_t2_cols = [c.replace("team1|", "team2|", 1) for c in cand_t1_cols if c.replace("team1|", "team2|", 1) in df_raw.columns]
+    cand_t2_cols = [
+        c.replace("team1|", "team2|", 1) for c in cand_t1_cols if c.replace("team1|", "team2|", 1) in df_raw.columns
+    ]
 
     if not cand_t1_cols:
         return mapping
@@ -116,7 +115,7 @@ def _extract_team_name_map_from_raw(df_raw: pd.DataFrame) -> dict[int, str]:
         t1_id = pd.to_numeric(row.get(t1_id_col), errors="coerce")
         t2_id = pd.to_numeric(row.get(t2_id_col), errors="coerce")
 
-        def _first_name(cols: list[str]) -> str | None:
+        def _first_name(cols: list[str], row: pd.Series = row) -> str | None:
             for col in cols:
                 val = row.get(col)
                 if isinstance(val, str):
@@ -577,7 +576,9 @@ def render_pipeline_tab() -> None:
     if RESULTS_DIR.exists():
         files = sorted([p for p in RESULTS_DIR.rglob("*") if p.is_file()])
         show_n = st.slider("Number of files to show", min_value=10, max_value=200, value=40, step=10)
-        rows = [{"path": str(p.relative_to(ROOT_DIR)), "size_kb": round(p.stat().st_size / 1024, 2)} for p in files[:show_n]]
+        rows = [
+            {"path": str(p.relative_to(ROOT_DIR)), "size_kb": round(p.stat().st_size / 1024, 2)} for p in files[:show_n]
+        ]
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
     else:
         st.warning("`results/` folder not found.")
@@ -597,8 +598,6 @@ def render_simulator_tab() -> None:
     if profiles.empty:
         st.error("Could not build team profiles from dataset.")
         return
-
-    all_team_ids = sorted(profiles["team_id"].astype(int).unique().tolist())
 
     # Build two demo cases: one ACCEPTED and one REJECTED.
     accepted_example, accepted_row_df = _find_filter_pair_by_label(dataset, df_raw, label=1)
@@ -742,4 +741,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

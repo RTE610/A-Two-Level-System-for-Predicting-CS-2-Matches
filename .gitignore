@@ -11,3 +11,10 @@ results/
 catboost_info/
 agent-prompt-*.md
 
+mlruns/
+mlflow.db
+reports/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

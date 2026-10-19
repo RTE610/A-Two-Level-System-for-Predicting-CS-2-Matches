@@ -1,8 +1,8 @@
 [project]
 name = "cs2-match-predictor"
 version = "0.1.0"
-description = "CS2 match predictor (refactored from a notebook)"
-requires-python = ">=3.10"
+description = "Two-stage CS2 match predictor: Binary-Filter + Match-Predictor"
+requires-python = ">=3.11"
 
 dependencies = [
   "numpy",
@@ -15,5 +15,41 @@ dependencies = [
   "joblib",
   "seaborn",
   "streamlit",
+  "ijson",
+  "mlflow",
 ]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+  "pandas-stubs",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["scripts/eda.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402"]
+"ui/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+# Strict typing is enforced for v2.0 modules; legacy v1.0 modules are tracked as tech debt.
+files = ["src/snapshot.py", "src/splits.py", "src/tracking.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
