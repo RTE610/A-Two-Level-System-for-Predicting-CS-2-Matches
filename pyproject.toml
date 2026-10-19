@@ -47,7 +47,8 @@ python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
 # Strict typing is enforced for v2.0 modules; legacy v1.0 modules are tracked as tech debt.
-files = ["src/snapshot.py", "src/splits.py", "src/tracking.py"]
+files = ["src"]
+exclude = ["src/(binary_filter|data_loader|evaluation|features|training|visualization|preprocessing)\\.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
