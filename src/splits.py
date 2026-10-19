@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TypeAlias
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-IntArray = npt.NDArray[np.int64]
+IntArray: TypeAlias = npt.NDArray[np.int64]
 
 
 @dataclass(frozen=True)
