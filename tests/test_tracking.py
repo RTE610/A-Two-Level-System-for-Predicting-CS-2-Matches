@@ -5,6 +5,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 
 from src.tracking import file_sha256, flatten_metrics, latest_model_version, log_run
 
@@ -34,7 +35,8 @@ def test_log_run_registers_model(tmp_path: Path) -> None:
     artifacts = tmp_path / "out"
     artifacts.mkdir()
     (artifacts / "metrics.json").write_text("{}")
-    model = LogisticRegression().fit(np.array([[0.0], [1.0]]), [0, 1])
+    X, y = np.array([[0.0], [1.0]]), [0, 1]
+    models = {"unit-model": LogisticRegression().fit(X, y), "unit-mlp": MLPClassifier(max_iter=50).fit(X, y)}
 
     run_id = log_run(
         run_name="unit",
@@ -42,7 +44,7 @@ def test_log_run_registers_model(tmp_path: Path) -> None:
         metrics={"test": {"proposed_accuracy": 0.69}},
         data_path=data,
         artifacts_dir=artifacts,
-        models={"unit-model": model},
+        models=models,
         tracking_uri=uri,
     )
 
@@ -50,3 +52,4 @@ def test_log_run_registers_model(tmp_path: Path) -> None:
     assert run.data.metrics["test.proposed_accuracy"] == 0.69
     assert run.data.tags["data.sha256"] == file_sha256(data)
     assert latest_model_version("unit-model", tracking_uri=uri) == "1"
+    assert latest_model_version("unit-mlp", tracking_uri=uri) == "1"

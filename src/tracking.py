@@ -65,7 +65,12 @@ def log_run(
         if artifacts_dir is not None and artifacts_dir.exists():
             mlflow.log_artifacts(str(artifacts_dir), artifact_path="outputs")
         for name, model in (models or {}).items():
-            mlflow.sklearn.log_model(model, name=name, registered_model_name=name)
+            mlflow.sklearn.log_model(
+                model,
+                name=name,
+                registered_model_name=name,
+                serialization_format=mlflow.sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE,
+            )
         return str(run.info.run_id)
 
 
