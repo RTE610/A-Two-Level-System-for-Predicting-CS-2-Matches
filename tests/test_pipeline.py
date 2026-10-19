@@ -53,7 +53,7 @@ def test_train_imputer_uses_train_statistics_only() -> None:
 def test_two_stage_end_to_end(tmp_path: Path) -> None:
     frames = run_temporal.build_frames(write(tmp_path))
     split = temporal_split(frames.dates)
-    result = run_temporal.evaluate_two_stage(frames, split, mode="ultra", out_dir=tmp_path / "out")
+    result, pipelines = run_temporal.evaluate_two_stage(frames, split, mode="ultra", out_dir=tmp_path / "out")
 
     test = result["test"]
     assert result["date_ranges"]["train"][1] <= result["date_ranges"]["test"][0]
@@ -61,3 +61,4 @@ def test_two_stage_end_to_end(tmp_path: Path) -> None:
     assert test["baseline_ci95"][0] <= test["baseline_accuracy"] <= test["baseline_ci95"][1]
     assert test["baseline_accuracy"] > 0.6
     assert (tmp_path / "out" / "metrics.json").exists()
+    assert set(pipelines) == {"cs2-match-predictor", "cs2-binary-filter"}

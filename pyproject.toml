@@ -51,6 +51,7 @@ files = ["src"]
 exclude = ["src/(binary_filter|data_loader|evaluation|features|training|visualization|preprocessing)\\.py"]
 
 [tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
 testpaths = ["tests"]
 addopts = "-q"
 
