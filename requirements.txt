@@ -11,3 +11,8 @@ streamlit
 
 ijson
 mlflow
+fastapi
+uvicorn
+httpx
+pydantic
+requests

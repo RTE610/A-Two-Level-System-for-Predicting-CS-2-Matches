@@ -47,8 +47,13 @@ python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
 # Strict typing is enforced for v2.0 modules; legacy v1.0 modules are tracked as tech debt.
-files = ["src"]
+files = ["src", "services"]
 exclude = ["src/(binary_filter|data_loader|evaluation|features|training|visualization|preprocessing)\\.py"]
+
+[[tool.mypy.overrides]]
+# Legacy v1.0 modules: typed gradually, tracked as tech debt.
+module = ["config", "src.binary_filter", "src.data_loader", "src.evaluation", "src.features", "src.training", "src.visualization", "src.preprocessing"]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
