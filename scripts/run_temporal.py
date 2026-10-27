@@ -22,6 +22,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -33,6 +34,7 @@ from src.data_loader import load_matches  # noqa: E402
 from src.features import compute_team_distances_augmented, difference_distance  # noqa: E402
 from src.preprocessing import preprocess  # noqa: E402
 from src.splits import SplitIndices, bootstrap_accuracy_ci, date_ranges, random_split, temporal_split  # noqa: E402
+from src.tracking import FILTER_NAME, PREDICTOR_NAME, log_run  # noqa: E402
 from src.training import run_pca_sweep  # noqa: E402
 
 DATE_COL = "match|matchStartingDateTime|$date"
@@ -112,7 +114,7 @@ def evaluate_two_stage(
     mode: str,
     out_dir: Path,
     extra_test: Frames | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Pipeline]]:
     tr, va, te = split.train, split.val, split.test
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -204,7 +206,11 @@ def evaluate_two_stage(
     )
     joblib.dump({"model": model, "pca": pca}, out_dir / "predictor.pkl")
     (out_dir / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    return result
+    pipelines = {
+        PREDICTOR_NAME: Pipeline([("scaler", scaler), ("pca", pca), ("clf", model)]),
+        FILTER_NAME: Pipeline([("scaler", f_scaler), ("clf", f_model)]),
+    }
+    return result, pipelines
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,6 +221,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fractions", type=float, nargs=3, default=(0.7, 0.15, 0.15))
     parser.add_argument("--mode", choices=["ultra", "fast", "full"], default="fast")
     parser.add_argument("--output-dir", type=Path, default=ROOT_DIR / "results" / "v2")
+    parser.add_argument("--no-mlflow", action="store_true", help="Skip MLflow logging.")
+    parser.add_argument("--tracking-uri", default=None, help="MLflow tracking URI (default: sqlite:///mlflow.db).")
     return parser.parse_args()
 
 
@@ -236,10 +244,32 @@ def main() -> None:
     summary: dict[str, Any] = {}
     for name in names:
         log.info("=== %s split ===", name)
-        summary[name] = evaluate_two_stage(
-            frames, splits[name](), args.mode, args.output_dir / name, extra if name == "temporal" else None
+        split = splits[name]()
+        out_dir = args.output_dir / name
+        summary[name], pipelines = evaluate_two_stage(
+            frames, split, args.mode, out_dir, extra if name == "temporal" else None
         )
         log.info("%s: %s", name, json.dumps(summary[name]["test"], indent=None))
+        if not args.no_mlflow:
+            run_id = log_run(
+                run_name=f"{name}-{args.mode}",
+                params={
+                    "split": name,
+                    "fractions": list(args.fractions),
+                    "mode": args.mode,
+                    "distance": "difference",
+                    "filter_model": summary[name]["filter_model"],
+                    "predictor_model": summary[name]["predictor_model"],
+                    "pca_components": summary[name]["pca_components"],
+                    **{f"rows_{k}": v for k, v in split.sizes().items()},
+                },
+                metrics={k: v for k, v in summary[name].items() if k in ("test", "post_cutoff")},
+                data_path=args.json_path,
+                artifacts_dir=out_dir,
+                models=pipelines if name == "temporal" else None,
+                **({"tracking_uri": args.tracking_uri} if args.tracking_uri else {}),
+            )
+            log.info("MLflow run: %s", run_id)
 
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
