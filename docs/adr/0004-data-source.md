@@ -1,6 +1,6 @@
 # ADR-0004: Data source for v2.0
 
-- Status: **Proposed** — waiting for approval by PO and PM
+- Status: **Accepted** by PO (Максим Пешко), 27.10.2026 · confirmed by the architecture review (`docs/architecture-review.md`)
 - Owner: Architect
 - Issue: see `type:adr` issue "Approve ADR-0004"
 

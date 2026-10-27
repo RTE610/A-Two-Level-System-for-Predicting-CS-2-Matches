@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # Ensure repo root is on sys.path for `config` and `src.*` imports.
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
 import config  # noqa: E402
@@ -97,7 +98,14 @@ def _select_classifiers(classifiers: dict[str, object], model_set: str) -> dict[
     return {k: v for k, v in classifiers.items() if k in keep}
 
 
+LEGACY_WARNING = (
+    "Legacy v1.0 script (thesis reproduction): random train/test split, model selection on test. "
+    "Not used by v2.0 — see scripts/run_temporal.py (ADR-0003)."
+)
+
+
 def main():
+    warnings.warn(LEGACY_WARNING, stacklevel=1)
     args = parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
 import config  # noqa: E402
@@ -376,7 +377,14 @@ def run_for_dataset(
     return filter_results_df, combined
 
 
+LEGACY_WARNING = (
+    "Legacy v1.0 script (thesis reproduction): random train/test split, model selection on test. "
+    "Not used by v2.0 — see scripts/run_temporal.py (ADR-0003)."
+)
+
+
 def main() -> None:
+    warnings.warn(LEGACY_WARNING, stacklevel=1)
     args = parse_args()
     out_dir = Path(args.output_dir)
     tables_dir, figures_dir, models_dir = _ensure_dirs(out_dir)
