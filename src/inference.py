@@ -32,17 +32,31 @@ class TrainImputer:
 class FeatureFrames:
     filter_X: pd.DataFrame
     dist_X: pd.DataFrame
+    dist_X_swapped: pd.DataFrame
 
 
-def build_features(records: list[Record], require_target: bool = True) -> tuple[pd.DataFrame, FeatureFrames]:
-    """Same feature path as training: flatten -> preprocess -> filter meta-features + team distances."""
-    df_raw = records_to_frame(records)
+def _numeric(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.drop(columns=["y"]).apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+
+def build_features(
+    records: list[Record],
+    require_target: bool = True,
+    headers: list[str] | None = None,
+) -> tuple[pd.DataFrame, FeatureFrames]:
+    """
+    Same feature path as training: flatten -> preprocess -> filter meta-features + team distances.
+
+    `headers` fixes the flattened schema to the training one, so a record with missing branches
+    (e.g. one team without game statistics) still yields the same team1/team2 columns.
+    """
+    df_raw = records_to_frame(records, headers)
     df = preprocess(df_raw, impute=False, require_target=require_target)
-    distances = compute_team_distances_augmented(df, difference_distance)[2]
-    dist_X = distances.drop(columns=["y"]).apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    distances = compute_team_distances_augmented(df, difference_distance)
     frames = FeatureFrames(
         filter_X=create_filter_features(df, impute=False).reset_index(drop=True),
-        dist_X=dist_X.reset_index(drop=True),
+        dist_X=_numeric(distances[2]).reset_index(drop=True),
+        dist_X_swapped=_numeric(distances[5]).reset_index(drop=True),
     )
     return df_raw.loc[df.index].reset_index(drop=True), frames
 
@@ -100,16 +114,29 @@ class TwoStageModel:
     pca: Any
     model: Any
     reasons: ReasonThresholds
+    headers: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def accept(self, filter_X: pd.DataFrame) -> np.ndarray:
+        return np.asarray(
+            self.filter_model.predict(self.filter_scaler.transform(self.filter_imputer.transform(filter_X)))
+        )
+
+    def _raw_proba(self, dist_X: pd.DataFrame) -> np.ndarray:
+        X = pd.DataFrame(self.scaler.transform(self.imputer.transform(dist_X)), columns=self.imputer.columns_)
+        return np.asarray(self.model.predict_proba(self.pca.transform(X)))[:, 1]
+
+    def team1_win_proba(self, dist_X: pd.DataFrame, dist_X_swapped: pd.DataFrame) -> np.ndarray:
+        """Order-invariant probability: average of p(team1 | A,B) and 1 - p(team1 | B,A)."""
+        return (self._raw_proba(dist_X) + 1.0 - self._raw_proba(dist_X_swapped)) / 2.0
 
     def predict(self, records: list[Record]) -> list[Prediction]:
         if not records:
             return []
-        _, frames = build_features(records, require_target=False)
+        _, frames = build_features(records, require_target=False, headers=self.headers or None)
         fX = self.filter_imputer.transform(frames.filter_X)
-        accepted = self.filter_model.predict(self.filter_scaler.transform(fX)).astype(bool)
-        X = pd.DataFrame(self.scaler.transform(self.imputer.transform(frames.dist_X)), columns=self.imputer.columns_)
-        proba = np.asarray(self.model.predict_proba(self.pca.transform(X)))[:, 1]
+        accepted = self.accept(frames.filter_X).astype(bool)
+        proba = self.team1_win_proba(frames.dist_X, frames.dist_X_swapped)
         return [
             Prediction(
                 accepted=bool(accepted[i]),

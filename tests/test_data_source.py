@@ -18,7 +18,7 @@ def test_profile_uses_latest_record_before_as_of(league: dict[str, Any]) -> None
 
 def test_schedule_respects_horizon(league: dict[str, Any]) -> None:
     ds = SnapshotDataSource(league["data_dir"])
-    assert [m.match_id for m in ds.schedule(14)] == [9000, 9001, 9002, 9003, 9004]
+    assert [m.match_id for m in ds.schedule(14)] == [9000, 9001, 9200, 9002, 9003, 9004]
     assert 9100 in [m.match_id for m in ds.schedule(60)]
 
 
