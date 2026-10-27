@@ -35,7 +35,9 @@ def test_tc02_every_scheduled_match_has_a_result(schedule: list[dict[str, Any]])
 def test_tc03_rejected_match_has_reason_and_no_winner(client: Any, league: dict[str, Any]) -> None:
     """FR-3: status 'rejected' and a reason, without a winner."""
     ids = list(league["strength"])
-    results = [client.post("/predict", json={"team1_id": a, "team2_id": b}).json() for a in ids[:8] for b in ids[:8] if a < b]
+    results = [
+        client.post("/predict", json={"team1_id": a, "team2_id": b}).json() for a in ids[:8] for b in ids[:8] if a < b
+    ]
     rejected = [r for r in results if r["decision"] == "rejected"]
     assert rejected
     for r in rejected:

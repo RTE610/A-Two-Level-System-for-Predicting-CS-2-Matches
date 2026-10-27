@@ -51,3 +51,14 @@ def test_bug22_team_name_falls_back_to_schedule(client: Any) -> None:
     schedule = client.get("/schedule", params={"days": 14}).json()
     ghost = next(m for m in schedule if m["match_id"] == 9200)
     assert ghost["team2"]["name"] == "Ghost Team"
+
+
+def test_bug27_schedule_is_computed_once_per_version(client: Any, league: dict[str, Any]) -> None:
+    """#27: the schedule was re-predicted match by match on every request."""
+    import time
+
+    client.get("/schedule")
+    started = time.perf_counter()
+    for _ in range(5):
+        assert client.get("/schedule", params={"days": 14}).status_code == 200
+    assert (time.perf_counter() - started) / 5 < 0.5

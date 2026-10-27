@@ -21,6 +21,7 @@ from src.inference import Prediction, TwoStageModel
 log = logging.getLogger("prediction_api")
 
 STALE_PROFILE_DAYS = 7
+SCHEDULE_HORIZON_DAYS = 60
 
 
 class TeamOut(BaseModel):
@@ -138,15 +139,9 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
             has_game_stats=profile.has_game_stats,
         )
 
-    def predict_pair(team1_id: int, team2_id: int, match: ScheduledMatch | None) -> PredictionOut:
-        started = time.perf_counter()
-        record = data().build_record(team1_id, team2_id, match.match_id if match else None)
-        if record is None:
-            raise HTTPException(status_code=404, detail="No statistics for one of the teams before the data date")
-        m = model()
-        result: Prediction = m.model.predict([record])[0]
+    def to_out(team1_id: int, team2_id: int, match: ScheduledMatch | None, result: Prediction) -> PredictionOut:
         winner_id = (team1_id, team2_id)[result.winner_index]
-        out = PredictionOut(
+        return PredictionOut(
             match_id=match.match_id if match else None,
             scheduled_at=match.scheduled_at if match else None,
             team1=team_out(team1_id),
@@ -158,24 +153,57 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
             win_probability=round(result.win_probability, 3) if result.accepted else None,
             incomplete_data=result.incomplete_data,
             data_as_of=data().as_of,
-            model_version=m.version,
+            model_version=model().version,
         )
+
+    def log_prediction(out: PredictionOut, latency_ms: float) -> None:
         log.info(
             json.dumps(
                 {
                     "event": "prediction",
                     "match_id": out.match_id,
-                    "team1": team1_id,
-                    "team2": team2_id,
+                    "team1": out.team1.id,
+                    "team2": out.team2.id,
                     "mode": out.mode,
                     "decision": out.decision,
                     "win_probability": out.win_probability,
                     "incomplete_data": out.incomplete_data,
                     "model_version": out.model_version,
-                    "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "latency_ms": round(latency_ms, 1),
                 }
             )
         )
+
+    def predict_pair(team1_id: int, team2_id: int, match: ScheduledMatch | None) -> PredictionOut:
+        started = time.perf_counter()
+        record = data().build_record(team1_id, team2_id, match.match_id if match else None)
+        if record is None:
+            raise HTTPException(status_code=404, detail="No statistics for one of the teams before the data date")
+        out = to_out(team1_id, team2_id, match, model().model.predict([record])[0])
+        log_prediction(out, (time.perf_counter() - started) * 1000)
+        return out
+
+    def scheduled_predictions() -> dict[int, PredictionOut]:
+        """FR-2: predictions for the whole schedule are computed once per (data, model) version, in one batch."""
+        key = (data().version(), model().version)
+        cached = state.get("schedule_cache")
+        if isinstance(cached, tuple) and cached[0] == key:
+            return cached[1]
+        started = time.perf_counter()
+        matches = data().schedule(SCHEDULE_HORIZON_DAYS)
+        records = {m.match_id: data().build_record(m.team1_id, m.team2_id, m.match_id) for m in matches}
+        known = [m for m in matches if records[m.match_id] is not None]
+        results = model().model.predict([records[m.match_id] for m in known])  # type: ignore[misc]
+        per_match_ms = (time.perf_counter() - started) * 1000 / max(len(matches), 1)
+        out: dict[int, PredictionOut] = {}
+        for match, result in zip(known, results, strict=True):
+            out[match.match_id] = to_out(match.team1_id, match.team2_id, match, result)
+            log_prediction(out[match.match_id], per_match_ms)
+        for match in matches:
+            if match.match_id not in out:
+                log.info(json.dumps({"event": "schedule_no_data", "match_id": match.match_id}))
+                out[match.match_id] = no_data(match)
+        state["schedule_cache"] = (key, out)
         return out
 
     @app.get("/health", response_model=HealthOut)
@@ -208,15 +236,9 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
         )
 
     @app.get("/schedule", response_model=list[PredictionOut])
-    def schedule(days: int = Query(14, ge=1, le=60)) -> list[PredictionOut]:
-        out = []
-        for match in data().schedule(days):
-            try:
-                out.append(predict_pair(match.team1_id, match.team2_id, match))
-            except HTTPException:
-                log.info(json.dumps({"event": "schedule_no_data", "match_id": match.match_id}))
-                out.append(no_data(match))
-        return out
+    def schedule(days: int = Query(14, ge=1, le=SCHEDULE_HORIZON_DAYS)) -> list[PredictionOut]:
+        predictions = scheduled_predictions()
+        return [predictions[m.match_id] for m in data().schedule(days)]
 
     @app.get("/matches/{match_id}", response_model=MatchCardOut)
     def match_card(match_id: int) -> MatchCardOut:
@@ -227,7 +249,7 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
         if p1 is None or p2 is None:
             raise HTTPException(status_code=404, detail="No statistics for one of the teams")
         return MatchCardOut(
-            prediction=predict_pair(match.team1_id, match.team2_id, match),
+            prediction=scheduled_predictions()[match.match_id],
             team1_stats=stats_out(p1),
             team2_stats=stats_out(p2),
             head_to_head_matches=data().head_to_head_count(match.team1_id, match.team2_id),

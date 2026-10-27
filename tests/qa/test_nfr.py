@@ -39,6 +39,7 @@ def test_tc16_prediction_is_logged(client: Any, league: dict[str, Any], caplog: 
 def test_tc14_training_is_reproducible(tmp_path: Any) -> None:
     """NFR reproducibility: the same data and seed give the same metrics."""
     import run_temporal
+
     from src.splits import temporal_split
     from tests.fixtures import synthetic_matches
 
