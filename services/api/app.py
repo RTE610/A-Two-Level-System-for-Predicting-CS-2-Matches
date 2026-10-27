@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +76,7 @@ class PredictRequest(BaseModel):
 
 class HealthOut(BaseModel):
     status: Literal["ok"]
+    canary_prediction: bool
     model_version: str
     model: dict[str, object]
     data_snapshot: str
@@ -88,7 +91,10 @@ class LoadedModel:
 
 
 def load_model() -> LoadedModel:
-    """Latest registered version from MLflow (ADR-0002); BUNDLE_PATH overrides it for local runs and tests."""
+    """
+    Model from the MLflow registry (ADR-0002): the latest version, or MODEL_VERSION when pinned (rollback).
+    BUNDLE_PATH overrides the registry for local runs and tests.
+    """
     bundle_path = os.environ.get("BUNDLE_PATH")
     if bundle_path:
         return LoadedModel(joblib.load(bundle_path), version=f"file:{Path(bundle_path).name}")
@@ -96,21 +102,36 @@ def load_model() -> LoadedModel:
     import mlflow
     from mlflow.tracking import MlflowClient
 
-    from src.tracking import DEFAULT_TRACKING_URI, PREDICTOR_NAME, latest_model_version
+    from src.tracking import DEFAULT_TRACKING_URI, PREDICTOR_NAME, latest_model_version, production_version
 
     uri = os.environ.get("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI)
-    version = latest_model_version(PREDICTOR_NAME, tracking_uri=uri)
+    version = (
+        os.environ.get("MODEL_VERSION")
+        or production_version(PREDICTOR_NAME, tracking_uri=uri)
+        or latest_model_version(PREDICTOR_NAME, tracking_uri=uri)
+    )
     if version is None:
         raise RuntimeError(f"No registered versions of {PREDICTOR_NAME} in {uri}")
     run_id = MlflowClient(tracking_uri=uri).get_model_version(PREDICTOR_NAME, version).run_id
     mlflow.set_tracking_uri(uri)
     path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="outputs/bundle.joblib")
-    return LoadedModel(joblib.load(path), version=f"{PREDICTOR_NAME}/v{version}")
+    bundle: TwoStageModel = joblib.load(path)
+    bundle.check_compatible()
+    return LoadedModel(bundle, version=f"{PREDICTOR_NAME}/v{version}")
 
 
 def create_app(loaded: LoadedModel | None = None, source: DataSource | None = None) -> FastAPI:
-    app = FastAPI(title="CS2 Match Predictor API", version="2.0.0")
     state: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Fail fast: an unavailable or incompatible model stops the deployment instead of serving 500s.
+        model()
+        data()
+        log.info(json.dumps({"event": "startup", "model_version": model().version, "data_as_of": str(data().as_of)}))
+        yield
+
+    app = FastAPI(title="CS2 Match Predictor API", version="2.0.0", lifespan=lifespan)
 
     def model() -> LoadedModel:
         if "model" not in state:
@@ -206,11 +227,27 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
         state["schedule_cache"] = (key, out)
         return out
 
+    def canary() -> bool:
+        """Deep health: one real prediction on two known teams, so a broken model cannot report 'ok'."""
+        teams = data().search_teams("", 2)
+        if len(teams) < 2:
+            return False
+        record = data().build_record(teams[0].team_id, teams[1].team_id)
+        return record is not None and 0.0 <= model().model.predict([record])[0].team1_win_probability <= 1.0
+
     @app.get("/health", response_model=HealthOut)
     def health() -> HealthOut:
         m, v = model(), data().version()
+        try:
+            ok = canary()
+        except Exception as exc:
+            log.error(json.dumps({"event": "canary_failed", "error": repr(exc)}))
+            raise HTTPException(status_code=503, detail=f"Canary prediction failed: {exc!r}") from exc
+        if not ok:
+            raise HTTPException(status_code=503, detail="Canary prediction failed: not enough teams in data")
         return HealthOut(
             status="ok",
+            canary_prediction=True,
             model_version=m.version,
             model=m.model.metadata,
             data_snapshot=v.snapshot,
