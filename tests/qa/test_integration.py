@@ -78,3 +78,41 @@ def test_tc20_ui_renders_api_responses(client: Any) -> None:
     assert any("CS2 Match Predictor" in t.value for t in app.title)
     assert app.dataframe, "schedule table is rendered"
     assert any("Дані станом на" in c.value for c in app.caption)
+
+
+def _run_ui(client: Any, page: str | None = None) -> Any:
+    from streamlit.testing.v1 import AppTest
+
+    def routed(method: str) -> Any:
+        def call(url: str, **kwargs: Any) -> Any:
+            path = url.replace("http://localhost:8000", "")
+            response = (
+                client.post(path, json=kwargs.get("json"))
+                if method == "post"
+                else client.get(path, params=kwargs.get("params"))
+            )
+            response.raise_for_status = lambda: None
+            return response
+
+        return call
+
+    with mock.patch("requests.get", routed("get")), mock.patch("requests.post", routed("post")):
+        app = AppTest.from_file(str(ROOT / "ui" / "app.py"), default_timeout=30).run()
+        if page:
+            app.sidebar.radio[0].set_value(page).run()
+    return app
+
+
+def test_bug28_hypothetical_defaults_to_two_different_teams(client: Any) -> None:
+    """#28: both pickers defaulted to the same team, so no Predict button was shown."""
+    app = _run_ui(client, "Теоретичний прогноз")
+    assert app.selectbox[0].value != app.selectbox[1].value
+    assert app.button, "Predict button is shown"
+
+
+def test_bug29_no_stray_none_output(client: Any) -> None:
+    """#29: Streamlit magic rendered 'None' under the page."""
+    for page in (None, "Теоретичний прогноз"):
+        app = _run_ui(client, page)
+        assert not [m for m in app.markdown if m.value.strip() in {"None", "`None`"}]
+        assert not app.json

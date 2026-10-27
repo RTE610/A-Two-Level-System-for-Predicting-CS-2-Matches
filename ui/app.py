@@ -99,14 +99,15 @@ def page_schedule() -> None:
         show_prediction(card["prediction"])
 
 
-def team_picker(label: str, key: str) -> int | None:
+def team_picker(label: str, key: str, default_index: int = 0) -> int | None:
     query = st.text_input(f"{label}: пошук за назвою", key=f"{key}_q")
     options = api_get("/teams", query=query, limit=50)
     if not options:
         st.caption("Команд не знайдено")
         return None
     names = {f"{t['name']} ({t['total_matches']} матчів)": t["id"] for t in options}
-    return names[st.selectbox(label, list(names), key=key)]
+    index = min(default_index, len(names) - 1)
+    return names[st.selectbox(label, list(names), index=index, key=key)]
 
 
 def page_hypothetical() -> None:
@@ -115,7 +116,7 @@ def page_hypothetical() -> None:
     with left:
         t1 = team_picker("Команда 1", "t1")
     with right:
-        t2 = team_picker("Команда 2", "t2")
+        t2 = team_picker("Команда 2", "t2", default_index=1)
     if t1 is None or t2 is None:
         return
     if t1 == t2:
@@ -140,7 +141,10 @@ def main() -> None:
         f"Модель {health['model_version']} · дані {health['data_snapshot']} · станом на {fmt_dt(health['data_as_of'])}"
     )
     page = st.sidebar.radio("Розділ", ["Розклад", "Теоретичний прогноз"])
-    page_schedule() if page == "Розклад" else page_hypothetical()
+    if page == "Розклад":
+        page_schedule()
+    else:
+        page_hypothetical()
 
 
 main()
