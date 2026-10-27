@@ -1,0 +1,45 @@
+name: Bug report
+description: A defect found during development or testing
+labels: ["type:bug"]
+body:
+  - type: input
+    id: test_case
+    attributes:
+      label: Test case / requirement
+      placeholder: TC-07 / FR-3
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [critical, major, minor, trivial]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P1, P2, P3]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version (commit / model version)
