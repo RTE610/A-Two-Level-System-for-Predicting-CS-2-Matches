@@ -8,7 +8,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -23,7 +23,6 @@ from src.binary_filter import (  # noqa: E402
     train_binary_filter,
 )
 from src.data_loader import load_matches  # noqa: E402
-from src.evaluation import compare_models  # noqa: E402
 from src.features import compute_team_distances_augmented, difference_distance  # noqa: E402
 from src.preprocessing import preprocess  # noqa: E402
 from src.training import run_pca_sweep  # noqa: E402
@@ -40,7 +39,9 @@ from src.visualization import (  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run full two-stage CS2 experiments (Binary-Filter + Match-Predictor).")
+    parser = argparse.ArgumentParser(
+        description="Run full two-stage CS2 experiments (Binary-Filter + Match-Predictor)."
+    )
     parser.add_argument("--json-60", type=str, required=True, help="Path to 60-day JSON.")
     parser.add_argument("--json-90", type=str, required=True, help="Path to 90-day JSON.")
     parser.add_argument("--output-dir", type=str, default="results", help="Output directory for tables/figures.")
@@ -76,7 +77,9 @@ def _select_predictor_classifiers(mode: str) -> dict[str, Any]:
     return {k: v for k, v in cls.items() if k in keep}
 
 
-def _get_pca_range(mode: str, n_features: int, n_samples: int, pca_max_arg: int | None, pca_step_arg: int | None) -> list[int]:
+def _get_pca_range(
+    mode: str, n_features: int, n_samples: int, pca_max_arg: int | None, pca_step_arg: int | None
+) -> list[int]:
     if mode == "ultra":
         default_max, default_step = 10, 3
     elif mode == "fast":
@@ -121,10 +124,14 @@ def _save_filter_importance(best_model: Any, feature_names: list[str], save_path
         imp = np.abs(np.asarray(best_model.coef_)).ravel()
     else:
         return
-    plot_feature_importance_values(feature_names=feature_names, importances=imp, save_path=save_path, top_n=min(20, len(feature_names)))
+    plot_feature_importance_values(
+        feature_names=feature_names, importances=imp, save_path=save_path, top_n=min(20, len(feature_names))
+    )
 
 
-def _save_predictor_importance(best_model: Any, best_pca: Any, original_feature_names: list[str], save_path: Path) -> None:
+def _save_predictor_importance(
+    best_model: Any, best_pca: Any, original_feature_names: list[str], save_path: Path
+) -> None:
     if hasattr(best_model, "feature_importances_"):
         pc_imp = np.asarray(best_model.feature_importances_).ravel()
     elif hasattr(best_model, "coef_"):
@@ -168,8 +175,6 @@ def run_for_dataset(
         random_state=config.RANDOM_STATE,
         stratify=y_winner,
     )
-    df_train = df.iloc[train_idx].copy()
-    df_test = df.iloc[test_idx].copy()
 
     print(f"=== STEP 3: Binary-Filter (meta features) ({dataset_name}) ===")
     # Align raw filter target to the post-preprocessing dataframe indices.
@@ -408,12 +413,12 @@ def main() -> None:
     best_rows.to_csv(tables_dir / "best_models_summary.csv", index=False)
 
     # 60d vs 90d comparison figure (meta filter rows only).
-    r60 = all_bvp[(all_bvp["dataset"] == "60d") & (all_bvp["filter_type"] == "meta")][["model", "proposed_accuracy"]].rename(
-        columns={"proposed_accuracy": "accuracy"}
-    )
-    r90 = all_bvp[(all_bvp["dataset"] == "90d") & (all_bvp["filter_type"] == "meta")][["model", "proposed_accuracy"]].rename(
-        columns={"proposed_accuracy": "accuracy"}
-    )
+    r60 = all_bvp[(all_bvp["dataset"] == "60d") & (all_bvp["filter_type"] == "meta")][
+        ["model", "proposed_accuracy"]
+    ].rename(columns={"proposed_accuracy": "accuracy"})
+    r90 = all_bvp[(all_bvp["dataset"] == "90d") & (all_bvp["filter_type"] == "meta")][
+        ["model", "proposed_accuracy"]
+    ].rename(columns={"proposed_accuracy": "accuracy"})
     plot_dataset_comparison(r60, r90, figures_dir / "fig_3_10_60d_vs_90d_comparison.png")
 
     print(f"Experiment complete. Results saved to {out_dir}/")
@@ -421,4 +426,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

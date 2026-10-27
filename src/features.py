@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -166,7 +167,17 @@ def compute_team_distances_augmented(
     df: pd.DataFrame,
     distance_func: Callable[..., float],
     distance_var: float | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+]:
     """
     Compute team-to-team distance features and augment by swapping teams.
 
@@ -250,4 +261,3 @@ def compute_team_distances_augmented(
         augmented_team2_df,
         augmented_distances,
     )
-

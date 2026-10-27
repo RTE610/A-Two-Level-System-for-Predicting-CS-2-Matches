@@ -4,18 +4,17 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
+from sklearn.decomposition import PCA
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
-    f1_score,
     log_loss,
     precision_recall_fscore_support,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.base import clone
 
 
 def evaluate_model(
@@ -225,4 +224,3 @@ def run_cross_validation(
         summarized[clf_name]["f1_macro_std"] = f1_std
 
     return summarized
-

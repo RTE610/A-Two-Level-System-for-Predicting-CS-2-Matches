@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Binary-Filter (level 1 of the two-stage system).
 
@@ -8,21 +6,21 @@ Target:
   otherwise              -> 0 (rejected)
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.dummy import DummyClassifier
 
 from src.evaluation import evaluate_model
-
 
 RANDOM_STATE = 42
 
@@ -243,4 +241,3 @@ def apply_filter(X: np.ndarray | pd.DataFrame, model: Any, scaler: StandardScale
 
     X_scaled = scaler.transform(X_df)
     return model.predict(X_scaled).astype(int)
-

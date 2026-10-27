@@ -8,8 +8,8 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -71,9 +71,7 @@ def main():
 
     dataset_path = model_dir / "dataset.csv"
     if not dataset_path.exists():
-        raise FileNotFoundError(
-            f"Missing {dataset_path}. Please ensure train.py saved dataset.csv into the model dir."
-        )
+        raise FileNotFoundError(f"Missing {dataset_path}. Please ensure train.py saved dataset.csv into the model dir.")
 
     dataset_df = pd.read_csv(dataset_path)
     if "y" not in dataset_df.columns:
@@ -179,9 +177,11 @@ def main():
     if final_results:
         ranked = sorted(final_results.keys(), key=lambda n: float(final_results[n].get("f1_macro", -1.0)), reverse=True)
         top_k = max(1, int(args.top_k))
-        for i, clf_name in enumerate(ranked[:top_k]):
+        for clf_name in ranked[:top_k]:
             cm = final_results[clf_name]["confusion_matrix"]
-            plot_confusion_matrix(cm, class_names=["0", "1"], save_path=figures_dir / f"confusion_matrix_{_safe_model_name(clf_name)}.png")
+            plot_confusion_matrix(
+                cm, class_names=["0", "1"], save_path=figures_dir / f"confusion_matrix_{_safe_model_name(clf_name)}.png"
+            )
 
     # ROC curves for all models that provide scores
     if roc_items:
@@ -189,7 +189,11 @@ def main():
 
     # Feature importance for top models (approx original importance from PCA components importances)
     # We use the top tree-based models by f1_macro and approximate original feature importance:
-    tree_like = [n for n in final_results.keys() if n in {"Random Forest", "XGBoost", "LightGBM", "CatBoost", "Gradient Boosting", "Decision Tree"}]
+    tree_like = [
+        n
+        for n in final_results.keys()
+        if n in {"Random Forest", "XGBoost", "LightGBM", "CatBoost", "Gradient Boosting", "Decision Tree"}
+    ]
     ranked_tree = sorted(tree_like, key=lambda n: float(final_results[n].get("f1_macro", -1.0)), reverse=True)
     top_for_importance = ranked_tree[: min(3, len(ranked_tree))]
 
@@ -255,4 +259,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

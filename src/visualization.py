@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -95,7 +96,7 @@ def plot_roc_curves(models_results: list[dict[str, Any]], save_path: str | Path)
 
     plt.figure(figsize=(10, 7))
     for item in models_results:
-        plt.plot(item["fpr"], item["tpr"], label=f'{item["name"]} (AUC={item["auc"]:.3f})')
+        plt.plot(item["fpr"], item["tpr"], label=f"{item['name']} (AUC={item['auc']:.3f})")
 
     plt.plot([0, 1], [0, 1], "k--", alpha=0.6)
     plt.title("ROC-криві")
@@ -110,9 +111,9 @@ def plot_roc_curves(models_results: list[dict[str, Any]], save_path: str | Path)
 
 def _get_feature_importances(model: Any) -> np.ndarray:
     if hasattr(model, "feature_importances_"):
-        return np.asarray(getattr(model, "feature_importances_"))
+        return np.asarray(model.feature_importances_)
     if hasattr(model, "coef_"):
-        coef = getattr(model, "coef_")
+        coef = model.coef_
         return np.abs(np.asarray(coef)).ravel()
     if hasattr(model, "get_feature_importance"):
         # CatBoost returns array-like.
@@ -403,7 +404,7 @@ def plot_coverage_vs_accuracy(df: pd.DataFrame, save_path: str | Path) -> None:
     plt.figure(figsize=(7, 5))
     plt.scatter(df["coverage"], df["proposed_accuracy"], s=60, alpha=0.8)
     for _, row in df.iterrows():
-        label = f'{row.get("dataset", "")}:{row.get("model", "")}'
+        label = f"{row.get('dataset', '')}:{row.get('model', '')}"
         plt.annotate(label, (row["coverage"], row["proposed_accuracy"]), fontsize=7)
     plt.xlabel("Coverage")
     plt.ylabel("Proposed accuracy")
@@ -411,4 +412,3 @@ def plot_coverage_vs_accuracy(df: pd.DataFrame, save_path: str | Path) -> None:
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
-

@@ -22,9 +22,7 @@ def get_classifiers_result_string(components_range: list[int], pca_results: dict
         best_idx = int(np.argmax(scores))
         best_accuracy = float(scores[best_idx])
         best_components = int(components_range[best_idx])
-        strings.append(
-            f"{clf_name}: Best Accuracy: {best_accuracy:.4f}, Best PCA Components: {best_components}"
-        )
+        strings.append(f"{clf_name}: Best Accuracy: {best_accuracy:.4f}, Best PCA Components: {best_components}")
     return strings
 
 
@@ -174,4 +172,3 @@ def retrain_with_best_pca(
         results[clf_name] = {"accuracy": acc, "pca_components": optimal_components}
 
     return results
-

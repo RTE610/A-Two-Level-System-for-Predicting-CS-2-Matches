@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -150,4 +150,3 @@ def load_matches(
                 all_dict["y"].append(None)
 
     return pd.DataFrame(all_dict)
-
