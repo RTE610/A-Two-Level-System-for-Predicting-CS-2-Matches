@@ -64,7 +64,7 @@
 | Coverage | 42.7% | 42.0% | 36.4% |
 | ROC-AUC with filter | — | 0.77 | 0.73 |
 | Binary-Filter accuracy | 86.7% | 87.0% | 86.7% |
-| Stress test 02–09.2026 (no game stats) | — | — | 67.7% |
+| Stress test 02–09.2026 (no game stats) | — | — | 67.8% |
 
 ## Stability assessment
 
