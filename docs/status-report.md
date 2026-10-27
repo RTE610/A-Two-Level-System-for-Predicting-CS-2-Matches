@@ -33,11 +33,12 @@
 
 | Risk | Status | Response | Owner |
 |---|---|---|---|
-| R6 game statistics missing after 01.2026 | Open, medium | Flag in UI; stress test 67.7% vs 68.9% | PO |
+| R6 game statistics missing after 01.2026 | Open, medium | Flag in UI; stress test 67.8% vs 68.9% | PO |
 | R7 schedule in the snapshot goes stale | Open, medium | Demo "as of" 28.09.2026 | PM |
 | R8 dependency on PhD students | **Open, high** | Send request #9; agree refresh schedule | PM |
 | R9 ADR-0004 not approved | Open, high | Approve in #7 | Architect |
 | R10 low data coverage: 67% of scheduled matches without data | **New, high** | Ask to include lower-tier teams (request #9, item 6) | PO |
+| R11 independent code review does not happen in practice | New, medium | Assign reviewers; architecture review #17 | EM |
 
 ## Next steps (Lab 5)
 
