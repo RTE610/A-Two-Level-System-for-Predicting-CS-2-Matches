@@ -1,151 +1,57 @@
-# CS2 Match Predictor
+# CS2 Match Predictor v2.0
 
-Refactored pipeline: `JSON -> preprocessing -> distance features -> PCA -> training -> evaluation -> UI`.
+Two-stage prediction of Counter-Strike 2 match winners: a **Binary-Filter** decides whether a match is predictable, a **Match-Predictor** names the winner and the win probability.
 
-## Local setup
+```
+department snapshot ─► ingest + schema validation ─► training (split by date) ─► MLflow registry
+                                                                                     │
+                                         Streamlit UI ◄── REST ── Prediction API ◄───┘
+```
 
-Install dependencies:
+## Quick start
 
 ```bash
-uv pip install -r requirements.txt
+uv pip install -r requirements.lock            # or: pip install -r requirements.lock
+
+# 1. Prepare the snapshot (validation, cutoff, team names, schedule)
+python scripts/prepare_snapshot.py --snapshot-dir <path>/28.09.2026 --as-of 2026-09-28
+
+# 2. Train and register the model in MLflow (split by match date)
+python scripts/run_temporal.py --mode fast --split temporal --extra-test-json data/matches_v2_post_cutoff.json
+
+# 3. Run the service and the UI
+MLFLOW_TRACKING_URI=sqlite:///mlflow.db uvicorn services.api.app:app --port 8000
+API_URL=http://localhost:8000 streamlit run ui/app.py
 ```
 
-## Train
+With Docker: `docker compose up` (API on :8000, UI on :8501); training job: `docker compose --profile jobs run --rm train`.
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | model version, data snapshot and date |
+| `GET /schedule?days=14` | scheduled matches with automatic predictions |
+| `GET /matches/{id}` | match card: team statistics, head-to-head, prediction |
+| `GET /teams?query=` · `GET /teams/{id}` | team search and profile |
+| `POST /predict` | hypothetical prediction for any two teams |
+
+## Configuration
+
+| Variable | Default | Used by |
+|---|---|---|
+| `DATA_DIR` | `data` | API |
+| `MLFLOW_TRACKING_URI` | `sqlite:///mlflow.db` | training, API |
+| `BUNDLE_PATH` | — | API (local bundle instead of the registry) |
+| `API_URL` | `http://localhost:8000` | UI |
+
+## Development
 
 ```bash
-python scripts/train.py --json-path "./data/matches.json" --distance-set orig --mode fast
+ruff check . && ruff format --check . && mypy && pytest
+SMOKE_URL=http://localhost:8000 pytest -m smoke     # smoke tests against a running service
 ```
 
-Artifacts are saved to `models/<run_id>/dist_orig/`.
+Process: `CONTRIBUTING.md` · decisions: `docs/adr/` · test plan and report: `docs/qa/` · status: `docs/status-report.md`.
 
-## Evaluate
-
-```bash
-python scripts/evaluate.py --model-dir "./models/<run_id>/dist_orig" --output-dir "./results"
-```
-
-## UI
-
-```bash
-streamlit run ui/app.py
-```
-
-Open `http://localhost:8501`.
-
-## Docker (recommended)
-
-Build image:
-
-```bash
-docker compose build
-```
-
-Run UI:
-
-```bash
-docker compose up -d cs2-ui
-```
-
-Run training job in container:
-
-```bash
-docker compose --profile jobs run --rm cs2-train
-```
-
-Run evaluation job in container (PowerShell example):
-
-```powershell
-$env:MODEL_DIR="/app/models/<run_id>/dist_orig"
-docker compose --profile jobs run --rm cs2-evaluate
-```
-
-Stop UI:
-
-```bash
-docker compose down
-```
-# CS2 Match Predictor (refactored)
-
-This project refactors the original notebook into a modular Python pipeline:
-`JSON -> (header) -> DataFrame -> preprocessing -> distance features -> PCA sweep -> training`.
-
-## Setup (local)
-
-1. Create a virtual environment and install dependencies:
-   - `uv pip install -r requirements.txt`
-
-## Data preparation
-
-1. Put your CS2 matches JSON file somewhere accessible.
-2. (Optional) Provide `headers.txt` (one header per line).  
-   If `--header-path` is not provided, headers are generated automatically from the JSON.
-
-## Training
-
-```bash
-python scripts/train.py --json-path "./data/matches.json" --distance-set orig
-```
-
-Optional:
-- `--header-path "./data/headers.txt"`
-- `--distance-set aug` (uses augmented distance features)
-- `--output-dir "./models"`
-
-By default it uses `difference_distance` (as in the notebook).
-
-## Outputs
-
-Models are saved to `models/<run_id>/dist_<orig|aug>/`:
-- `scaler.pkl`
-- `best_setting_result.txt`
-- `*_best_model.pkl`
-- `*_best_pca.pkl`
-- `dataset.csv`
-- `pca_sweep_results.csv`
-
-## Evaluation
-
-Generate tables and figures:
-
-```bash
-python scripts/evaluate.py --model-dir "./models/<run_id>/dist_orig" --output-dir "./results"
-```
-
-## UI (Streamlit)
-
-Run locally:
-
-```bash
-streamlit run ui/app.py
-```
-
-Open: `http://localhost:8501`
-
-## Run with Docker
-
-Build the image from the repository root:
-
-```bash
-docker build -t cs2-match-predictor .
-```
-
-Train (example):
-
-```bash
-docker run --rm -v "$(pwd)/data:/app/data" -v "$(pwd)/models:/app/models" cs2-match-predictor ^
-  python scripts/train.py --json-path "/app/data/matches.json" --distance-set orig --output-dir "/app/models"
-```
-
-Evaluate (example):
-
-```bash
-docker run --rm -v "$(pwd)/results:/app/results" cs2-match-predictor ^
-  python scripts/evaluate.py --model-dir "/app/models/<run_id>/dist_orig" --output-dir "/app/results"
-```
-
-Run UI with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
+Legacy v1.0 scripts (thesis reproduction, random split) are in `scripts/legacy_v1/`.
