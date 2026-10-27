@@ -87,44 +87,27 @@ def _get_value_by_prefix(match: dict[str, Any], prefix: str) -> Any:
     return val
 
 
-def load_matches(
-    json_path: str | Path,
-    header_path: str | Path | None = None,
-) -> pd.DataFrame:
+def records_to_frame(records: list[dict[str, Any]], headers: list[str] | None = None) -> pd.DataFrame:
     """
-    Convert JSON matches into a flat DataFrame using `header_path` (or generated headers).
+    Flatten match records into the training DataFrame layout (one column per JSON leaf).
 
-    Target `y`:
-      - 1 if team1 won (actualWinnerId == team1 pandaScoreTeamId)
-      - 0 if team2 won
-      - None otherwise
+    Target `y`: 1 if team1 won, 0 if team2 won, None if unknown (e.g. future matches).
     """
 
-    json_path = Path(json_path)
+    if headers is None:
+        header_set: set[str] = set()
+        for match in records:
+            _walk_json_leaves("match", match, header_set)
+        headers = sorted(header_set)
 
-    if header_path is not None:
-        header_path = Path(header_path)
-        header_lines = header_path.read_text(encoding="utf-8").splitlines()
-        headers = [line.strip() for line in header_lines if line.strip()]
-    else:
-        headers = get_header_from_json(json_path)
-
-    # Init columns as lists.
     all_dict: dict[str, list[Any]] = {prefix: [] for prefix in headers}
     all_dict["y"] = []
 
-    with json_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, list):
-        raise ValueError("Expected JSON root to be a list of matches.")
-
-    # Ensure target prefixes exist (if they don't, y will be computed as None).
     target_actual = "match|actualWinnerId"
     target_t1 = "match|summaryStats|team1|pandaScoreTeamId"
     target_t2 = "match|summaryStats|team2|pandaScoreTeamId"
 
-    for match in data:
+    for match in records:
         for prefix in headers:
             try:
                 val = _get_value_by_prefix(match, prefix)
@@ -141,12 +124,32 @@ def load_matches(
 
         if actual is None:
             all_dict["y"].append(None)
+        elif t1_id is not None and t1_id == actual:
+            all_dict["y"].append(1)
+        elif t2_id is not None and t2_id == actual:
+            all_dict["y"].append(0)
         else:
-            if t1_id is not None and t1_id == actual:
-                all_dict["y"].append(1)
-            elif t2_id is not None and t2_id == actual:
-                all_dict["y"].append(0)
-            else:
-                all_dict["y"].append(None)
+            all_dict["y"].append(None)
 
     return pd.DataFrame(all_dict)
+
+
+def load_matches(
+    json_path: str | Path,
+    header_path: str | Path | None = None,
+) -> pd.DataFrame:
+    """Load a JSON array of match records and flatten it with `records_to_frame`."""
+
+    json_path = Path(json_path)
+    headers: list[str] | None = None
+    if header_path is not None:
+        header_lines = Path(header_path).read_text(encoding="utf-8").splitlines()
+        headers = [line.strip() for line in header_lines if line.strip()]
+
+    with json_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, list):
+        raise ValueError("Expected JSON root to be a list of matches.")
+
+    return records_to_frame(data, headers)

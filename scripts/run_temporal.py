@@ -32,6 +32,7 @@ import config  # noqa: E402
 from src.binary_filter import create_filter_features, create_filter_target, select_binary_filter  # noqa: E402
 from src.data_loader import load_matches  # noqa: E402
 from src.features import compute_team_distances_augmented, difference_distance  # noqa: E402
+from src.inference import ReasonThresholds, TrainImputer, TwoStageModel  # noqa: E402
 from src.preprocessing import preprocess  # noqa: E402
 from src.splits import SplitIndices, bootstrap_accuracy_ci, date_ranges, random_split, temporal_split  # noqa: E402
 from src.tracking import FILTER_NAME, PREDICTOR_NAME, log_run  # noqa: E402
@@ -70,18 +71,6 @@ def build_frames(json_path: Path) -> Frames:
         dist_X=dist_X.reset_index(drop=True),
         y=df["y"].astype(int).to_numpy(),
     )
-
-
-class TrainImputer:
-    """Mean imputation fitted on train only; columns all-NaN in train are dropped."""
-
-    def fit(self, X: pd.DataFrame) -> TrainImputer:
-        self.columns_ = [c for c in X.columns if X[c].notna().any()]
-        self.means_ = X[self.columns_].mean(numeric_only=True)
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return X.reindex(columns=self.columns_).fillna(self.means_).fillna(0.0)
 
 
 def pca_range(mode: str, n_features: int, n_samples: int) -> list[int]:
@@ -205,6 +194,24 @@ def evaluate_two_stage(
         out_dir / "preprocessors.pkl",
     )
     joblib.dump({"model": model, "pca": pca}, out_dir / "predictor.pkl")
+    bundle = TwoStageModel(
+        filter_imputer=f_imp,
+        filter_scaler=f_scaler,
+        filter_model=f_model,
+        imputer=d_imp,
+        scaler=scaler,
+        pca=pca,
+        model=model,
+        reasons=ReasonThresholds.fit(fX["train"], frames.filter_y[tr]),
+        metadata={
+            "filter_model": flt["best_model_name"],
+            "predictor_model": best,
+            "pca_components": int(pca.n_components_),
+            "train_until": result["date_ranges"]["train"][1],
+            "test_proposed_accuracy": result["test"]["proposed_accuracy"],
+        },
+    )
+    joblib.dump(bundle, out_dir / "bundle.joblib")
     (out_dir / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     pipelines = {
         PREDICTOR_NAME: Pipeline([("scaler", scaler), ("pca", pca), ("clf", model)]),

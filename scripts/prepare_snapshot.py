@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from src.schema import validate_records  # noqa: E402
 from src.snapshot import (  # noqa: E402
     MATCH_PREDICTION_FILE,
     MATCHES_FILE,
@@ -47,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--coefficients-version", default="1")
     parser.add_argument("--cutoff-month", default="auto", help="YYYY-MM, 'auto' or 'none'.")
     parser.add_argument("--max-missing-pct", type=float, default=5.0)
+    parser.add_argument("--max-invalid-share", type=float, default=0.01, help="Abort if more records fail the schema.")
     parser.add_argument("--as-of", default=None, help="ISO date treated as 'now' for the schedule.")
     parser.add_argument("--horizon-days", type=int, default=14)
     return parser.parse_args()
@@ -61,6 +63,15 @@ def main() -> None:
     log.info("Selecting feature set %s ...", version.label)
     records = select_feature_set(iter_json_array(args.snapshot_dir / MATCH_PREDICTION_FILE), version)
     log.info("Unique matches: %d (%s .. %s)", len(records), match_date(records[0]), match_date(records[-1]))
+
+    records, validation = validate_records(records)
+    log.info("Schema: %d invalid of %d (%.2f%%)", validation.invalid, validation.total, 100 * validation.invalid_share)
+    for error, count in validation.errors.most_common():
+        log.info("  %5d  %s", count, error)
+    if validation.invalid_share > args.max_invalid_share:
+        raise SystemExit(
+            f"Invalid share {validation.invalid_share:.2%} exceeds {args.max_invalid_share:.2%}; ingest aborted"
+        )
 
     report = quality_by_month(records)
     args.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +108,12 @@ def main() -> None:
         "as_of": as_of.isoformat(),
         "scheduled": len(schedule),
         "snapshot_dir": args.snapshot_dir.name,
+        "prepared_at": datetime.now(UTC).isoformat(),
+        "validation": {
+            "total": validation.total,
+            "invalid": validation.invalid,
+            "errors": dict(validation.errors),
+        },
     }
     (args.out_dir / "snapshot_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(report.to_string(index=False))

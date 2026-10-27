@@ -6,7 +6,7 @@ import pandas as pd
 import config
 
 
-def preprocess(df: pd.DataFrame, impute: bool = True) -> pd.DataFrame:
+def preprocess(df: pd.DataFrame, impute: bool = True, require_target: bool = True) -> pd.DataFrame:
     """
     Preprocess the raw matches dataframe:
     1) Convert {$numberDouble: 'Infinity'} to NaN for powerRank columns
@@ -17,6 +17,7 @@ def preprocess(df: pd.DataFrame, impute: bool = True) -> pd.DataFrame:
 
     With `impute=False` steps that compute statistics over the whole dataset (mean filling)
     are skipped, so imputation can be fitted on the training split only (v2.0 pipeline).
+    With `require_target=False` rows without a known winner are kept (inference on future matches).
     """
 
     df = df.copy()
@@ -48,7 +49,8 @@ def preprocess(df: pd.DataFrame, impute: bool = True) -> pd.DataFrame:
         print(f"Removed {len(cols_to_drop)} columns: {cols_to_drop[:5]}...")
 
     # 4) Remove rows without target.
-    df = df[df["y"].notna()]
+    if require_target:
+        df = df[df["y"].notna()]
 
     # 5) Fill NaN with means (as in the original notebook).
     # TODO: consider median/KNN/drop if this hurts performance.
