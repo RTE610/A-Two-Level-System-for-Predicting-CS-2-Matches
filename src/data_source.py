@@ -76,8 +76,13 @@ class SnapshotDataSource:
             self.as_of = self.as_of.replace(tzinfo=UTC)
 
         names = json.loads((data_dir / "team_names.json").read_text(encoding="utf-8"))
-        self._names: dict[int, str] = {int(k): v for k, v in names.items()}
+        self._names: dict[int, str] = {int(k): v.strip() for k, v in names.items() if v and v.strip()}
         self._schedule_raw: list[Record] = json.loads((data_dir / "schedule.json").read_text(encoding="utf-8"))
+        for match in self._schedule_raw:
+            for side in ("team1", "team2"):
+                team, name = int(match[side]["id"]), (match[side].get("name") or "").strip()
+                if name and team not in self._names:
+                    self._names[team] = name
 
         records: list[Record] = []
         for file in ("matches_v2.json", "matches_v2_post_cutoff.json"):

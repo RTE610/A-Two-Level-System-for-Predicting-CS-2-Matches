@@ -31,6 +31,8 @@ def fmt_dt(value: str) -> str:
 
 
 def verdict(p: dict[str, Any]) -> str:
+    if p["decision"] == "no_data":
+        return "Немає даних"
     if p["decision"] == "rejected":
         return f"Відхилено: {p['reason']}"
     return f"{p['winner']['name']} · {p['win_probability']:.0%}"
@@ -41,7 +43,9 @@ def show_prediction(p: dict[str, Any]) -> None:
         st.info("Гіпотетичний матч: цієї пари немає в розкладі")
     if p["incomplete_data"]:
         st.warning("Неповні дані: у профілі команди немає ігрової статистики (ADR, kills, KAST)")
-    if p["decision"] == "rejected":
+    if p["decision"] == "no_data":
+        st.info(f"Прогноз неможливий. {p['reason']}")
+    elif p["decision"] == "rejected":
         st.error(f"Прогноз не надається. Причина: {p['reason']}")
     else:
         st.success(f"Переможець: **{p['winner']['name']}** · шанс перемоги {p['win_probability']:.0%}")
@@ -81,7 +85,11 @@ def page_schedule() -> None:
     labels = {f"{r['Початок']} · {r['Команда 1']} vs {r['Команда 2']}": r["match_id"] for r in rows}
     choice = st.selectbox("Відкрити матч", list(labels))
     if choice:
-        card = api_get(f"/matches/{labels[choice]}")
+        try:
+            card = api_get(f"/matches/{labels[choice]}")
+        except requests.HTTPError as exc:
+            st.info(f"Картка матчу недоступна: {exc.response.json().get('detail', exc.response.text)}")
+            return
         left, right = st.columns(2)
         with left:
             show_team(card["team1_stats"])

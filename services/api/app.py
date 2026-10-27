@@ -44,7 +44,7 @@ class PredictionOut(BaseModel):
     team1: TeamOut
     team2: TeamOut
     mode: Literal["scheduled", "hypothetical"]
-    decision: Literal["accepted", "rejected"]
+    decision: Literal["accepted", "rejected", "no_data"]
     reason: str | None
     winner: TeamOut | None
     win_probability: float | None
@@ -190,6 +190,23 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
             data_as_of=v.as_of,
         )
 
+    def no_data(match: ScheduledMatch) -> PredictionOut:
+        missing = [data().team_name(t) for t in (match.team1_id, match.team2_id) if data().team_profile(t) is None]
+        return PredictionOut(
+            match_id=match.match_id,
+            scheduled_at=match.scheduled_at,
+            team1=team_out(match.team1_id),
+            team2=team_out(match.team2_id),
+            mode="scheduled",
+            decision="no_data",
+            reason=f"Немає статистики команди до дати даних: {', '.join(missing)}",
+            winner=None,
+            win_probability=None,
+            incomplete_data=True,
+            data_as_of=data().as_of,
+            model_version=model().version,
+        )
+
     @app.get("/schedule", response_model=list[PredictionOut])
     def schedule(days: int = Query(14, ge=1, le=60)) -> list[PredictionOut]:
         out = []
@@ -197,7 +214,8 @@ def create_app(loaded: LoadedModel | None = None, source: DataSource | None = No
             try:
                 out.append(predict_pair(match.team1_id, match.team2_id, match))
             except HTTPException:
-                log.warning(json.dumps({"event": "schedule_skip", "match_id": match.match_id}))
+                log.info(json.dumps({"event": "schedule_no_data", "match_id": match.match_id}))
+                out.append(no_data(match))
         return out
 
     @app.get("/matches/{match_id}", response_model=MatchCardOut)

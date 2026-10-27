@@ -29,11 +29,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
 import config  # noqa: E402
-from src.binary_filter import create_filter_features, create_filter_target, select_binary_filter  # noqa: E402
-from src.data_loader import load_matches  # noqa: E402
-from src.features import compute_team_distances_augmented, difference_distance  # noqa: E402
-from src.inference import ReasonThresholds, TrainImputer, TwoStageModel  # noqa: E402
-from src.preprocessing import preprocess  # noqa: E402
+from src.binary_filter import create_filter_target, select_binary_filter  # noqa: E402
+from src.inference import ReasonThresholds, TrainImputer, TwoStageModel, build_features  # noqa: E402
 from src.splits import SplitIndices, bootstrap_accuracy_ci, date_ranges, random_split, temporal_split  # noqa: E402
 from src.tracking import FILTER_NAME, PREDICTOR_NAME, log_run  # noqa: E402
 from src.training import run_pca_sweep  # noqa: E402
@@ -49,27 +46,23 @@ class Frames:
     filter_X: pd.DataFrame
     filter_y: np.ndarray
     dist_X: pd.DataFrame
+    dist_X_swapped: pd.DataFrame
     y: np.ndarray
+    headers: list[str]
 
 
-def build_frames(json_path: Path) -> Frames:
-    df_raw = load_matches(json_path=json_path, header_path=None)
+def build_frames(json_path: Path, headers: list[str] | None = None) -> Frames:
+    records = json.loads(json_path.read_text(encoding="utf-8"))
+    df_raw, features = build_features(records, require_target=True, headers=headers)
     reasons = df_raw[REASON_COL] if REASON_COL in df_raw.columns else pd.Series("", index=df_raw.index)
-    filter_y_raw = create_filter_target(pd.DataFrame({"noPredictionReason": reasons}))
-    dates_raw = df_raw[DATE_COL]
-
-    df = preprocess(df_raw, impute=False)
-    keep = df.index.to_numpy()
-
-    distances = compute_team_distances_augmented(df, difference_distance)[2]
-    dist_X = distances.drop(columns=["y"]).apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
-
     return Frames(
-        dates=dates_raw.loc[keep].reset_index(drop=True),
-        filter_X=create_filter_features(df, impute=False).reset_index(drop=True),
-        filter_y=np.asarray(filter_y_raw)[keep],
-        dist_X=dist_X.reset_index(drop=True),
-        y=df["y"].astype(int).to_numpy(),
+        dates=df_raw[DATE_COL],
+        filter_X=features.filter_X,
+        filter_y=create_filter_target(pd.DataFrame({"noPredictionReason": reasons})),
+        dist_X=features.dist_X,
+        dist_X_swapped=features.dist_X_swapped,
+        y=df_raw["y"].astype(int).to_numpy(),
+        headers=[c for c in df_raw.columns if c != "y"],
     )
 
 
@@ -91,12 +84,6 @@ def predictors(mode: str) -> dict[str, Any]:
     return cls if keep is None else {k: v for k, v in cls.items() if k in keep}
 
 
-def _proba(model: Any, X: np.ndarray) -> np.ndarray | None:
-    if hasattr(model, "predict_proba"):
-        return np.asarray(model.predict_proba(X))[:, 1]
-    return None
-
-
 def evaluate_two_stage(
     frames: Frames,
     split: SplitIndices,
@@ -109,10 +96,9 @@ def evaluate_two_stage(
 
     # Stage 1: Binary-Filter
     f_imp = TrainImputer().fit(frames.filter_X.iloc[tr])
-    fX = {k: f_imp.transform(frames.filter_X.iloc[idx]) for k, idx in {"train": tr, "val": va, "test": te}.items()}
+    fX = {k: f_imp.transform(frames.filter_X.iloc[idx]) for k, idx in {"train": tr, "val": va}.items()}
     flt = select_binary_filter(fX["train"], frames.filter_y[tr], fX["val"], frames.filter_y[va])
     f_model, f_scaler = flt["best_model"], flt["best_scaler"]
-    accepted = {k: f_model.predict(f_scaler.transform(fX[k])).astype(bool) for k in ("val", "test")}
 
     # Stage 2: Match-Predictor
     d_imp = TrainImputer().fit(frames.dist_X.iloc[tr])
@@ -121,8 +107,9 @@ def evaluate_two_stage(
     def prep(X: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(scaler.transform(d_imp.transform(X)), columns=d_imp.columns_)
 
-    X_tr, X_va, X_te = prep(frames.dist_X.iloc[tr]), prep(frames.dist_X.iloc[va]), prep(frames.dist_X.iloc[te])
-    y_tr, y_va, y_te = frames.y[tr], frames.y[va], frames.y[te]
+    X_tr, X_va = prep(frames.dist_X.iloc[tr]), prep(frames.dist_X.iloc[va])
+    y_tr, y_va = frames.y[tr], frames.y[va]
+    accepted_val = f_model.predict(f_scaler.transform(fX["val"])).astype(bool)
 
     sweep = run_pca_sweep(
         X_train=X_tr,
@@ -134,29 +121,49 @@ def evaluate_two_stage(
         output_dir=out_dir / "pca_sweep",
     )
 
+    def make_bundle(name: str) -> TwoStageModel:
+        return TwoStageModel(
+            filter_imputer=f_imp,
+            filter_scaler=f_scaler,
+            filter_model=f_model,
+            imputer=d_imp,
+            scaler=scaler,
+            pca=sweep["best_pcas"][name],
+            model=sweep["best_models"][name],
+            reasons=ReasonThresholds.fit(fX["train"], frames.filter_y[tr]),
+            headers=frames.headers,
+        )
+
+    def symmetric_pred(bundle: TwoStageModel, f: Frames, idx: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
+        dist = f.dist_X if idx is None else f.dist_X.iloc[idx]
+        swapped = f.dist_X_swapped if idx is None else f.dist_X_swapped.iloc[idx]
+        proba = bundle.team1_win_proba(dist, swapped)
+        return proba, (proba >= 0.5).astype(int)
+
     rows: list[dict[str, Any]] = []
-    for name, model in sweep["best_models"].items():
-        Z_va = sweep["best_pcas"][name].transform(X_va)
-        pred_va = model.predict(Z_va)
+    for name in sweep["best_models"]:
+        _, pred_va = symmetric_pred(make_bundle(name), frames, va)
         rows.append(
             {
                 "model": name,
                 "pca_components": int(sweep["best_pcas"][name].n_components_),
                 "val_baseline_accuracy": float(accuracy_score(y_va, pred_va)),
-                "val_proposed_accuracy": float(accuracy_score(y_va[accepted["val"]], pred_va[accepted["val"]]))
-                if accepted["val"].any()
+                "val_proposed_accuracy": float(accuracy_score(y_va[accepted_val], pred_va[accepted_val]))
+                if accepted_val.any()
                 else float("nan"),
             }
         )
     selection = pd.DataFrame(rows).sort_values("val_proposed_accuracy", ascending=False).reset_index(drop=True)
     selection.to_csv(out_dir / "model_selection_val.csv", index=False)
     best = str(selection.iloc[0]["model"])
-    model, pca = sweep["best_models"][best], sweep["best_pcas"][best]
+    bundle = make_bundle(best)
 
-    def report(X: pd.DataFrame, y: np.ndarray, acc_mask: np.ndarray, filt_y: np.ndarray) -> dict[str, Any]:
-        Z = pca.transform(X)
-        pred = model.predict(Z)
-        proba = _proba(model, Z)
+    def report(f: Frames, idx: np.ndarray | None) -> dict[str, Any]:
+        filter_X = f.filter_X if idx is None else f.filter_X.iloc[idx]
+        y = f.y if idx is None else f.y[idx]
+        filt_y = f.filter_y if idx is None else f.filter_y[idx]
+        acc_mask = bundle.accept(filter_X).astype(bool)
+        proba, pred = symmetric_pred(bundle, f, idx)
         base = bootstrap_accuracy_ci(y, pred)
         prop = bootstrap_accuracy_ci(y[acc_mask], pred[acc_mask])
         return {
@@ -167,9 +174,9 @@ def evaluate_two_stage(
             "proposed_ci95": [prop[1], prop[2]],
             "coverage": float(acc_mask.mean()),
             "accepted_matches": int(acc_mask.sum()),
-            "roc_auc_baseline": float(roc_auc_score(y, proba)) if proba is not None and len(set(y)) > 1 else None,
+            "roc_auc_baseline": float(roc_auc_score(y, proba)) if len(set(y)) > 1 else None,
             "roc_auc_proposed": float(roc_auc_score(y[acc_mask], proba[acc_mask]))
-            if proba is not None and len(set(y[acc_mask])) > 1
+            if len(set(y[acc_mask])) > 1
             else None,
             "filter_accuracy": float(accuracy_score(filt_y, acc_mask.astype(int))),
         }
@@ -179,42 +186,25 @@ def evaluate_two_stage(
         "date_ranges": date_ranges(frames.dates, split),
         "filter_model": flt["best_model_name"],
         "predictor_model": best,
-        "pca_components": int(pca.n_components_),
-        "test": report(X_te, y_te, accepted["test"], frames.filter_y[te]),
+        "pca_components": int(bundle.pca.n_components_),
+        "symmetric_probability": True,
+        "test": report(frames, te),
     }
-
     if extra_test is not None:
-        ex_f = f_imp.transform(extra_test.filter_X)
-        ex_acc = f_model.predict(f_scaler.transform(ex_f)).astype(bool)
-        result["post_cutoff"] = report(prep(extra_test.dist_X), extra_test.y, ex_acc, extra_test.filter_y)
+        result["post_cutoff"] = report(extra_test, None)
 
+    bundle.metadata = {
+        "filter_model": flt["best_model_name"],
+        "predictor_model": best,
+        "pca_components": int(bundle.pca.n_components_),
+        "train_until": result["date_ranges"]["train"][1],
+        "test_proposed_accuracy": result["test"]["proposed_accuracy"],
+    }
     flt["results_df"].to_csv(out_dir / "filter_selection_val.csv", index=False)
-    joblib.dump(
-        {"filter": f_model, "filter_scaler": f_scaler, "filter_imputer": f_imp, "imputer": d_imp, "scaler": scaler},
-        out_dir / "preprocessors.pkl",
-    )
-    joblib.dump({"model": model, "pca": pca}, out_dir / "predictor.pkl")
-    bundle = TwoStageModel(
-        filter_imputer=f_imp,
-        filter_scaler=f_scaler,
-        filter_model=f_model,
-        imputer=d_imp,
-        scaler=scaler,
-        pca=pca,
-        model=model,
-        reasons=ReasonThresholds.fit(fX["train"], frames.filter_y[tr]),
-        metadata={
-            "filter_model": flt["best_model_name"],
-            "predictor_model": best,
-            "pca_components": int(pca.n_components_),
-            "train_until": result["date_ranges"]["train"][1],
-            "test_proposed_accuracy": result["test"]["proposed_accuracy"],
-        },
-    )
     joblib.dump(bundle, out_dir / "bundle.joblib")
     (out_dir / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     pipelines = {
-        PREDICTOR_NAME: Pipeline([("scaler", scaler), ("pca", pca), ("clf", model)]),
+        PREDICTOR_NAME: Pipeline([("scaler", scaler), ("pca", bundle.pca), ("clf", bundle.model)]),
         FILTER_NAME: Pipeline([("scaler", f_scaler), ("clf", f_model)]),
     }
     return result, pipelines
@@ -239,7 +229,7 @@ def main() -> None:
 
     log.info("Loading %s", args.json_path)
     frames = build_frames(args.json_path)
-    extra = build_frames(args.extra_test_json) if args.extra_test_json else None
+    extra = build_frames(args.extra_test_json, headers=frames.headers) if args.extra_test_json else None
     log.info("Labelled matches: %d, filter features: %d, predictor features: %d",
              len(frames.y), frames.filter_X.shape[1], frames.dist_X.shape[1])  # fmt: skip
 

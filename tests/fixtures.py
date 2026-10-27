@@ -123,12 +123,19 @@ def write_league_data_dir(path: Any, records: list[dict[str, Any]], strength: di
         for k in range(5)
     ] + [
         {
+            "matchId": 9200,
+            "scheduledAt": (AS_OF + timedelta(days=2)).isoformat(),
+            "numberOfGames": 1,
+            "team1": {"id": ids[0], "name": "Team A"},
+            "team2": {"id": 999, "name": " Ghost Team "},
+        },
+        {
             "matchId": 9100,
             "scheduledAt": (AS_OF + timedelta(days=40)).isoformat(),
             "numberOfGames": 1,
             "team1": {"id": ids[0], "name": "Team A"},
             "team2": {"id": ids[1], "name": "Team B"},
-        }
+        },
     ]
     (path / "schedule.json").write_text(json.dumps(schedule))
     (path / "snapshot_meta.json").write_text(
