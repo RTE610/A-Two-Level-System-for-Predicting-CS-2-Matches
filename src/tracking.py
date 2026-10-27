@@ -15,6 +15,7 @@ from mlflow.tracking import MlflowClient
 DEFAULT_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 EXPERIMENT = "cs2-two-stage"
 PREDICTOR_NAME = "cs2-match-predictor"
+PRODUCTION_ALIAS = "production"
 FILTER_NAME = "cs2-binary-filter"
 
 
@@ -80,3 +81,19 @@ def latest_model_version(name: str, tracking_uri: str = DEFAULT_TRACKING_URI) ->
     if not versions:
         return None
     return str(max(int(v.version) for v in versions))
+
+
+def production_version(name: str, tracking_uri: str = DEFAULT_TRACKING_URI) -> str | None:
+    """Version behind the `production` alias, or None if the alias is not set."""
+    client = MlflowClient(tracking_uri=tracking_uri)
+    try:
+        return str(client.get_model_version_by_alias(name, PRODUCTION_ALIAS).version)
+    except mlflow.exceptions.MlflowException:
+        return None
+
+
+def promote(name: str, version: str, tracking_uri: str = DEFAULT_TRACKING_URI) -> str | None:
+    """Point the `production` alias to `version`; returns the previously promoted version."""
+    previous = production_version(name, tracking_uri)
+    MlflowClient(tracking_uri=tracking_uri).set_registered_model_alias(name, PRODUCTION_ALIAS, version)
+    return previous

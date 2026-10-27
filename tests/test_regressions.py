@@ -62,3 +62,24 @@ def test_bug27_schedule_is_computed_once_per_version(client: Any, league: dict[s
     for _ in range(5):
         assert client.get("/schedule", params={"days": 14}).status_code == 200
     assert (time.perf_counter() - started) / 5 < 0.5
+
+
+def test_release_rollback_to_incompatible_model_fails_fast(league: dict[str, Any]) -> None:
+    """Lab 5 rollback rehearsal: a v1 bundle (no feature schema) must be rejected at load, not with 500s later."""
+    import copy
+
+    import pytest
+
+    from src.inference import IncompatibleModelError
+
+    old = copy.copy(league["bundle"])
+    object.__setattr__(old, "headers", [])
+    with pytest.raises(IncompatibleModelError):
+        old.check_compatible()
+    league["bundle"].check_compatible()
+
+
+def test_release_health_runs_canary_prediction(client: Any) -> None:
+    """Lab 5: /health must exercise the model, not only report that the process is alive."""
+    body = client.get("/health").json()
+    assert body["status"] == "ok" and body["canary_prediction"] is True

@@ -104,6 +104,13 @@ class Prediction:
         return max(self.team1_win_probability, 1.0 - self.team1_win_probability)
 
 
+BUNDLE_SCHEMA_VERSION = 2
+
+
+class IncompatibleModelError(RuntimeError):
+    """The model bundle was produced by an older pipeline and cannot be served by this code."""
+
+
 @dataclass
 class TwoStageModel:
     filter_imputer: TrainImputer
@@ -116,6 +123,15 @@ class TwoStageModel:
     reasons: ReasonThresholds
     headers: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    schema_version: int = BUNDLE_SCHEMA_VERSION
+
+    def check_compatible(self) -> None:
+        """Fail fast on bundles from before schema v2 (no training feature schema, order-dependent probability)."""
+        if not getattr(self, "headers", None):
+            raise IncompatibleModelError(
+                "Model bundle has no training feature schema (bundle schema 1, before v2.0.0): "
+                "promote a model trained by v2.0 code, or roll back the code together with the model."
+            )
 
     def accept(self, filter_X: pd.DataFrame) -> np.ndarray:
         return np.asarray(
